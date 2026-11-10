@@ -1,0 +1,50 @@
+[
+  {
+    "id": "web-runtime",
+    "config": { "openBrowser": false, "printUrl": false, "surfaceContext": true }
+  },
+  {
+    "id": "locale",
+    "config": { "preference": "en" }
+  },
+  {
+    "id": "product-analytics",
+    "config": { "enabled": false }
+  },
+  {
+    "id": "session-log-deepseek",
+    "disabled": true
+  },
+  {
+    "id": "ui-settings-session-log",
+    "disabled": true
+  },
+  {
+    "id": "ui-settings-account",
+    "disabled": false
+  },
+  {
+    "id": "llm-deepseek",
+    "disabled": true
+  },
+  {
+    "id": "llm-deepseek-account",
+    "disabled": true
+  },
+  {
+    "id": "llm-pi-ai",
+    "disabled": false
+  },
+  {
+    "id": "ui-settings-models",
+    "disabled": true
+  },
+  {
+    "id": "command-feedback",
+    "disabled": true
+  },
+  {
+    "id": "ui-message-feedback",
+    "disabled": true
+  }
+]
