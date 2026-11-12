@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { WelcomeApi } from '../welcome-api.ts'
-import type { BambooApi, BambooState } from '../bamboo-types.ts'
+import type { BambooApi, BambooState, Currency } from '../bamboo-types.ts'
 
 export function Welcome({ api, account = (window as unknown as { bambooAccount?: BambooApi }).bambooAccount }: {
   api: Pick<WelcomeApi, 'skip'>
   account?: BambooApi | undefined
 }) {
   const [busy, setBusy] = useState(false)
+  const [currency, setCurrency] = useState<Currency>('USD')
   const [error, setError] = useState('')
   const pending = useRef(false)
   const mounted = useRef(false)
@@ -64,7 +65,7 @@ export function Welcome({ api, account = (window as unknown as { bambooAccount?:
       <h1 id="welcome-title">A workspace for your ideas.</h1>
       <p className="bamboo-description">Sign in with your Bamboo account to use models and work on local tasks.</p>
       {state?.status === 'waiting' && account ? <>
-        <p className="bamboo-description">Confirm this code in your browser:</p>
+        <p className="bamboo-description">Confirm this code in your browser to connect your {state.pendingCurrency} wallet:</p>
         <p className="bamboo-code" aria-label="Device verification code">{state.code}</p>
         <div className="bamboo-actions">
           <button className="bamboo-primary" disabled={busy} onClick={() => { void act(() => account.openBrowser()) }}>Open browser</button>
@@ -72,10 +73,16 @@ export function Welcome({ api, account = (window as unknown as { bambooAccount?:
         </div>
       </> : state?.status === 'signed-in' ?
         <button className="bamboo-primary" disabled={busy} onClick={() => { void openWorkspace() }}>Open workspace</button> :
+        <>
+        <label className="bamboo-currency">Billing currency
+          <select value={currency} disabled={busy || state?.status === 'connecting'} onChange={event => setCurrency(event.target.value as Currency)}>
+            <option value="USD">US dollar · USD</option><option value="CNY">Chinese yuan · CNY</option>
+          </select>
+        </label>
         <button className="bamboo-primary" type="button" disabled={busy || !account || !state || state.status === 'connecting'} aria-busy={busy}
-          onClick={() => { if (account) void act(() => account.signIn()) }}>
+          onClick={() => { if (account) void act(() => account.signIn(currency)) }}>
           {busy || state?.status === 'connecting' ? 'Starting sign-in…' : 'Sign in to Bamboo'}
-        </button>}
+        </button></>}
       {(error || state?.error) && <p className="bamboo-error" role="alert">{error || state?.error}</p>}
     </main>
   </>

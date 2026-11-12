@@ -1,7 +1,7 @@
 interface AccountState {
   status: string
   models: unknown[]
-  account?: { email: string }
+  account?: { email: string; currency: string }
 }
 
 interface AccountSource {
@@ -16,7 +16,7 @@ export function watchBambooCatalog(source: AccountSource, refresh: () => void): 
   const receive = (state: AccountState) => {
     if (!active) return
     ++revision
-    const next = JSON.stringify([state.status, state.account?.email, state.models])
+    const next = JSON.stringify([state.status, state.account?.email, state.account?.currency, state.models])
     if (next === fingerprint) return
     fingerprint = next
     refresh()

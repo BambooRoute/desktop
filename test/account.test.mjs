@@ -6,10 +6,13 @@ import { BambooAccount, parseModels, serviceOrigin } from '../overrides/bamboo-a
 import { createBambooBridge } from '../overrides/bamboo-bridge.mjs'
 
 const token = 'bbr-' + 'x'.repeat(43)
+const cnyToken = 'bbr-' + 'y'.repeat(43)
 const device = 'd'.repeat(43)
 const session = { email: 'member@example.test', email_verified: true, model_access: true,
-  policy: { ready: true, accepted: true }, wallet: { balance: '10', reserved: '0.3', available: '9.7' } }
-const model = { id: 'bamboo-test', name: 'Bamboo Test', provider: 'deepseek', max_output_tokens: 800,
+  policy: { ready: true, accepted: true }, currency: 'USD', topup_currencies: ['USD'], wallets: [
+    { currency: 'USD', balance: '10', reserved: '0.3', available: '9.7' },
+    { currency: 'CNY', balance: '70', reserved: '1.1', available: '68.9' }]  }
+const model = { currency: 'USD', id: 'bamboo-test', name: 'Bamboo Test', provider: 'deepseek', max_output_tokens: 800,
   capabilities: { chat: true, tools: true, vision: false }, sell: { input: '0.12', output: '0.3', cache_read: '0.01' } }
 const sse = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"Read","arguments":"{}"}}]},"finish_reason":null}]}\n\n'
   + 'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n'
@@ -18,7 +21,10 @@ async function fixture(t) {
   const calls = []
   const opened = []
   let saved = null
-  let sessionReply = { status: 200, value: structuredClone(session) }
+  let sessionReply = null
+  let requestedCurrency = 'USD'
+  let tokenCurrency = null
+  let catalogReply = null
   let exchange = null
   let sessionWait = null
   let modelHandler = null
@@ -35,19 +41,25 @@ async function fixture(t) {
       }
       res.setHeader('content-type', 'application/json')
       if (req.url === '/api/desktop/authorizations') {
-        res.end(JSON.stringify({ device_code: device, user_code: 'ABCD-EFGH', verification_uri: origin + '/desktop/authorize', expires_in: 600, interval: 3 })); return
+        requestedCurrency = body.currency
+        res.end(JSON.stringify({ device_code: device, currency: requestedCurrency, user_code: 'ABCD-EFGH', verification_uri: origin + '/desktop/authorize', expires_in: 600, interval: 3 })); return
       }
       if (req.url === '/api/desktop/token') {
+        const currency = requestedCurrency
         if (exchange) await exchange.promise
-        res.end(JSON.stringify({ token, key_id: 'device_key', expires_at: new Date(Date.now() + 86400000).toISOString() })); return
+        res.end(JSON.stringify({ token: currency === 'CNY' ? cnyToken : token, currency: tokenCurrency || currency, key_id: 'device_key', expires_at: new Date(Date.now() + 86400000).toISOString() })); return
       }
       if (req.url === '/api/desktop/session' && req.method === 'GET') {
         const waiting = sessionWait
         sessionWait = null
         if (waiting) await waiting.promise
-        res.statusCode = sessionReply.status; res.end(JSON.stringify(sessionReply.value)); return
+        const reply = sessionReply || { status: 200, value: { ...session, currency: req.headers.authorization === `Bearer ${cnyToken}` ? 'CNY' : 'USD' } }
+        res.statusCode = reply.status; res.end(JSON.stringify(reply.value)); return
       }
-      if (req.url === '/api/desktop/models') { res.end(JSON.stringify([model, { ...model, id: 'image-only', capabilities: { images: true } }])); return }
+      if (req.url === '/api/desktop/models') {
+        const currency = req.headers.authorization === `Bearer ${cnyToken}` ? 'CNY' : 'USD'
+        res.end(JSON.stringify(catalogReply || [{ ...model, currency }, { ...model, currency, id: 'image-only', capabilities: { images: true } }])); return
+      }
       res.end(JSON.stringify({ ok: true }))
     })().catch(() => { res.statusCode = 500; res.end('{}') })
   })
@@ -59,20 +71,20 @@ async function fixture(t) {
   const account = new BambooAccount({ site: origin, gateway: origin, storage, openExternal: async url => { opened.push(url) }, pollInterval: 60000 })
   t.after(() => { account.close(); server.closeAllConnections(); server.close() })
   return { account, origin, calls, opened, storage, saved: () => saved,
-    session: value => { sessionReply = value }, waitSession: value => { sessionWait = value },
+    session: value => { sessionReply = value }, tokenCurrency: value => { tokenCurrency = value }, catalog: value => { catalogReply = value }, waitSession: value => { sessionWait = value },
     exchange: value => { exchange = value }, modelHandler: value => { modelHandler = value } }
 }
 
 test('a slow refresh from a signed-out account cannot block the next sign-in', { timeout: 3000 }, async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   const pending = Promise.withResolvers()
   f.waitSession(pending)
   const oldRefresh = f.account.refresh(true)
   while (f.calls.filter(call => call.path === '/api/desktop/session' && call.method === 'GET').length < 2) await new Promise(resolve => setTimeout(resolve, 5))
   await f.account.signOut()
   f.session({ status: 200, value: { ...session, email: 'second@example.test' } })
-  await f.account.signIn()
+  await f.account.signIn('USD')
   try {
     await Promise.race([f.account.poll(), new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('sign-in blocked by stale refresh')), 1000); timer.unref() })])
     assert.equal(f.account.state().account.email, 'second@example.test')
@@ -83,7 +95,7 @@ test('a slow refresh from a signed-out account cannot block the next sign-in', {
 test('sign-in opens only a public verification code, stores a device grant and restores it', async t => {
   const f = await fixture(t)
   await f.account.initialize()
-  await Promise.all([f.account.signIn(), f.account.signIn()])
+  await Promise.all([f.account.signIn('USD'), f.account.signIn('USD')])
   assert.equal(f.calls.filter(call => call.path === '/api/desktop/authorizations').length, 1)
   assert.equal(f.opened[0], f.origin + '/desktop/authorize?code=ABCD-EFGH')
   assert.ok(!f.opened[0].includes(device))
@@ -103,7 +115,7 @@ test('sign-in opens only a public verification code, stores a device grant and r
 
 test('cancelling a token exchange revokes its late result without storing or publishing it', async t => {
   const f = await fixture(t)
-  await f.account.signIn()
+  await f.account.signIn('USD')
   const pending = Promise.withResolvers()
   f.exchange(pending)
   const polling = f.account.poll()
@@ -118,7 +130,7 @@ test('cancelling a token exchange revokes its late result without storing or pub
 
 test('revocation clears credentials while a network failure preserves the connection for retry', async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   f.session({ status: 503, value: { error: { code: 'database_unavailable' } } })
   assert.equal((await f.account.refresh(true)).canCall, false)
   assert.equal(f.saved().token, token)
@@ -129,17 +141,17 @@ test('revocation clears credentials while a network failure preserves the connec
 
 test('account eligibility and a stale account generation stop requests before gateway dispatch', async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   await assert.rejects(f.account.inference({ model: model.id }, -1, new AbortController().signal), /account changed/)
-  f.session({ status: 200, value: { ...session, wallet: { balance: '0', reserved: '0', available: '0' } } })
+  f.session({ status: 200, value: { ...session, wallets: [{ currency: 'USD', balance: '0', reserved: '0', available: '0' }, session.wallets[1]] } })
   await f.account.refresh(true)
-  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /Add funds/)
+  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /USD wallet has no available funds/)
   assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
 })
 
 test('authenticated Host proxy preserves tool SSE and does not expose or accept browser credentials', async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   const bridge = await createBambooBridge(f.account)
   t.after(() => bridge.close())
   assert.equal((await fetch(bridge.url + '/catalog')).status, 401)
@@ -157,7 +169,7 @@ test('authenticated Host proxy preserves tool SSE and does not expose or accept 
 
 test('gateway failures are not retried and upstream diagnostics are not exposed', async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   f.modelHandler((_req, res) => { res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'private-provider-credential' } })) })
   const bridge = await createBambooBridge(f.account)
   t.after(() => bridge.close())
@@ -173,7 +185,7 @@ test('gateway failures are not retried and upstream diagnostics are not exposed'
 
 test('cancelling a Host stream aborts the corresponding upstream request', async t => {
   const f = await fixture(t)
-  await f.account.signIn(); await f.account.poll()
+  await f.account.signIn('USD'); await f.account.poll()
   const closed = Promise.withResolvers()
   f.modelHandler((_req, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('data: {"choices":[]}\n\n'); res.once('close', () => closed.resolve()) })
   const bridge = await createBambooBridge(f.account)
@@ -192,6 +204,118 @@ test('cancelling a Host stream aborts the corresponding upstream request', async
 test('service origins and catalog capabilities are validated before use', () => {
   for (const origin of ['http://remote.example', 'https://user:secret@bambooroute.com', 'https://bambooroute.com/other', 'file:///tmp']) assert.throws(() => serviceOrigin(origin))
   assert.equal(serviceOrigin('https://bambooroute.com/'), 'https://bambooroute.com')
-  assert.throws(() => parseModels([{ ...model, max_output_tokens: -1 }]))
-  assert.deepEqual(parseModels([{ ...model, capabilities: { chat: true, tools: false } }]), [])
+  assert.throws(() => parseModels([{ ...model, max_output_tokens: -1 }], 'USD'))
+  assert.deepEqual(parseModels([{ ...model, capabilities: { chat: true, tools: false } }], 'USD'), [])
+})
+
+
+test('currency switching requires authorization, replaces the device grant and invalidates cached calls', async t => {
+  const f = await fixture(t)
+  await assert.rejects(f.account.signIn(), /Choose USD or CNY/)
+  await f.account.signIn('USD'); await f.account.poll()
+  const generation = f.account.generation
+  await f.account.signIn('CNY')
+  assert.equal(f.account.state().pendingCurrency, 'CNY')
+  assert.equal(f.saved().currency, 'USD')
+  assert.deepEqual((await f.account.catalog()).models, [])
+  await f.account.poll()
+  assert.equal(f.saved().token, cnyToken)
+  assert.equal(f.saved().currency, 'CNY')
+  assert.equal(f.account.state().account.wallet.available, '68.9')
+  assert.deepEqual(f.account.state().account.wallets.map(wallet => wallet.currency), ['USD', 'CNY'])
+  assert.equal(f.account.state().models[0].currency, 'CNY')
+  assert.ok(f.calls.some(call => call.method === 'DELETE' && call.authorization === `Bearer ${token}`))
+  await assert.rejects(f.account.inference({ model: model.id }, generation, new AbortController().signal), /account changed/)
+  const call = await f.account.inference({ model: model.id, stream: true }, f.account.generation, new AbortController().signal)
+  await call.response.text(); call.release()
+  assert.equal(f.calls.find(call => call.path === '/v1/chat/completions').authorization, `Bearer ${cnyToken}`)
+  await f.account.openPage('billing'); await f.account.openPage('requests')
+  assert.equal(f.opened.at(-2), f.origin + '/billing?currency=CNY')
+  assert.equal(f.opened.at(-1), f.origin + '/requests?currency=CNY')
+})
+
+test('cancelling a currency change preserves the previous connection and rejects the late credential', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('USD'); await f.account.poll()
+  await f.account.signIn('CNY')
+  const pending = Promise.withResolvers()
+  f.exchange(pending)
+  const polling = f.account.poll()
+  while (f.calls.filter(call => call.path === '/api/desktop/token').length < 2) await new Promise(resolve => setTimeout(resolve, 5))
+  await f.account.cancel()
+  pending.resolve(); await polling
+  assert.equal(f.saved().token, token)
+  assert.equal(f.account.state().account.currency, 'USD')
+  assert.equal(f.account.state().canCall, true)
+  assert.ok(f.calls.some(call => call.method === 'DELETE' && call.authorization === `Bearer ${cnyToken}`))
+  assert.ok(!f.calls.some(call => call.method === 'DELETE' && call.authorization === `Bearer ${token}`))
+})
+
+test('cancelling while securely saving a new grant restores the previous saved credential', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('USD'); await f.account.poll()
+  const originalWrite = f.storage.write
+  const saving = Promise.withResolvers()
+  const proceed = Promise.withResolvers()
+  f.storage.write = async value => {
+    if (value.currency === 'CNY') { saving.resolve(); await proceed.promise }
+    await originalWrite(value)
+  }
+  await f.account.signIn('CNY')
+  const polling = f.account.poll()
+  await saving.promise
+  const cancelling = f.account.cancel()
+  proceed.resolve()
+  await Promise.all([polling, cancelling])
+  assert.equal(f.saved().currency, 'USD')
+  assert.equal(f.account.state().account.currency, 'USD')
+  assert.equal(f.account.state().canCall, true)
+})
+
+test('currency changes are blocked until the active call releases its stream', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('USD'); await f.account.poll()
+  const call = await f.account.inference({ model: model.id, stream: true }, f.account.generation, new AbortController().signal)
+  assert.equal(f.account.state().activeCalls, 1)
+  await assert.rejects(f.account.signIn('CNY'), /Finish or stop current calls/)
+  await call.response.text(); call.release()
+  assert.equal(f.account.state().activeCalls, 0)
+  await f.account.signIn('CNY')
+  assert.equal(f.account.state().pendingCurrency, 'CNY')
+})
+
+test('a grant with a mismatched currency is revoked without replacing the current account', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('USD'); await f.account.poll()
+  await f.account.signIn('CNY'); f.tokenCurrency('USD')
+  await f.account.poll()
+  assert.equal(f.saved().token, token)
+  assert.equal(f.account.state().account.currency, 'USD')
+  assert.match(f.account.state().error, /could not be confirmed/)
+  assert.ok(f.calls.some(call => call.method === 'DELETE' && call.authorization === `Bearer ${cnyToken}`))
+})
+
+test('missing or mixed currency account and catalog data cannot dispatch a call', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('CNY'); await f.account.poll()
+  for (const reply of [{ ...session, currency: undefined }, { ...session, currency: 'CNY', wallets: [session.wallets[0], session.wallets[0]] }, session]) {
+    f.session({ status: 200, value: reply })
+    assert.equal((await f.account.refresh(true)).canCall, false)
+  }
+  f.session(null); f.catalog([model])
+  assert.equal((await f.account.refresh(true)).canCall, false)
+  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /invalid model list/)
+  assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
+  assert.throws(() => parseModels([{ ...model, currency: undefined }], 'USD'))
+})
+
+test('a funded alternate wallet cannot enable calls and unpriced currencies remain empty', async t => {
+  const f = await fixture(t)
+  await f.account.signIn('CNY'); await f.account.poll()
+  f.session({ status: 200, value: { ...session, currency: 'CNY', topup_currencies: [], wallets: [session.wallets[0], { currency: 'CNY', balance: '0', reserved: '0', available: '0' }] } })
+  assert.equal((await f.account.refresh(true)).canCall, false)
+  assert.match(f.account.state().notice, /CNY wallet has no available funds/)
+  f.session(null); f.catalog([])
+  assert.equal((await f.account.refresh(true)).canCall, false)
+  assert.match(f.account.state().notice, /available for CNY billing/)
 })

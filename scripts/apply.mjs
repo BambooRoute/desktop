@@ -40,6 +40,7 @@ export function applyOverrides(directory) {
   copy('AccountPanel.module.css', 'packages/client/ui-settings-account/src/client/BambooAccount.module.css')
   copy('bamboo-types.ts', 'packages/client/ui-settings-account/src/client/bamboo-types.ts')
   copy('catalog-account.ts', 'packages/client/ui-model-selection/src/client/bamboo-account.ts')
+  output.set('apps/desktop/tests/bamboo-account.client.spec.tsx', readFileSync(join(root, 'test/account.client.spec.tsx')))
   output.set('apps/desktop/tests/bamboo-welcome.client.spec.tsx', readFileSync(join(root, 'test/welcome.client.spec.tsx')))
   output.set('apps/desktop/tests/welcome-host.spec.ts', readFileSync(join(root, 'test/welcome-host.spec.ts')))
   output.set('apps/desktop/tests/bamboo-catalog.client.spec.tsx', readFileSync(join(root, 'test/catalog-account.spec.ts')))
