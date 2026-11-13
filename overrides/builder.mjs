@@ -23,6 +23,8 @@ export default {
     version: metadata.version,
     productName: metadata.productName,
     description: 'BambooRoute desktop workspace',
+    author: { name: 'BambooRoute', url: metadata.site },
+    homepage: metadata.site,
     dshDesktopAppId: metadata.appId,
     dshDesktopUpdateChannel: 'nightly',
     bamboo: { channel: 'preview', commit: metadata.commit, upstreamCommit: metadata.upstream.commit },

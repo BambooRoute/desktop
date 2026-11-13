@@ -29,6 +29,8 @@ const manifest = JSON.parse(execFileSync(executable,
 assert.equal(manifest.name, '@bambooroute/desktop')
 assert.equal(manifest.version, metadata.version)
 assert.equal(manifest.dshDesktopAppId, metadata.appId)
+assert.equal(manifest.author.name, 'BambooRoute')
+assert.equal(manifest.homepage, metadata.site)
 assert.equal(manifest.dshMandatoryUpdatePolicy, undefined)
 assert.equal(manifest.bamboo.upstreamCommit, metadata.upstream.commit)
 assert.equal(readFileSync(join(resources, 'bamboo/profile.json'), 'utf8'),
