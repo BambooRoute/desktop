@@ -36,7 +36,7 @@ jobs:
       BAMBOO_TARGET: ${{ matrix.target }}
     defaults:
       run:
-        shell: bash
+        shell: ${{ matrix.target == 'win-x64' && 'pwsh' || 'bash' }}
     steps:
       - name: Configure Windows paths
         if: runner.os == 'Windows'
@@ -60,11 +60,18 @@ jobs:
         run: npm run setup
       - name: Test Bamboo
         run: npm test
-      - name: Build and verify installer
+      - name: Build and verify macOS installer
+        if: runner.os == 'macOS'
         run: |
           mkdir -p .local
           set -o pipefail
           npm run package -- --target "$BAMBOO_TARGET" 2>&1 | tee ".local/package-$BAMBOO_TARGET.log"
+      - name: Build and verify Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force .local | Out-Null
+          npm run package -- --target $env:BAMBOO_TARGET 2>&1 | Tee-Object -FilePath ".local/package-$env:BAMBOO_TARGET.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

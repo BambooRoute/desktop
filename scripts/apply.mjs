@@ -38,6 +38,12 @@ export function applyOverrides(directory) {
   copy('smoke-package.ts', 'apps/desktop/scripts/bamboo-smoke-package.ts')
   copy('installed-environment.mjs', 'apps/desktop/src/bamboo-installed-environment.mjs')
   copy('installed-environment.d.mts', 'apps/desktop/src/bamboo-installed-environment.d.mts')
+  replace('apps/desktop/scripts/prepare-runtime.ts', [
+    ['artifactName: \'electron\', cacheRoot: BUILD_PATHS.downloads', "artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads, checksums: require('electron/checksums.json') as Record<string, string>"],
+  ])
+  replace('apps/desktop/scripts/smoke-runtime.ts', [
+    ['- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n', '- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n- id: web-runtime\\n  config:\\n    printUrl: false\\n'],
+  ])
   copy('preload-account.ts', 'apps/desktop/src/preload-bamboo.ts')
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
   copy('host-bridge.ts', 'apps/desktop-host/src/bamboo-bridge.ts')

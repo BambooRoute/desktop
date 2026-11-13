@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { closeSync, openSync, readSync } from 'node:fs'
 
 export const targets = Object.freeze({
   'mac-arm64': Object.freeze({ platform: 'darwin', arch: 'arm64', extension: '.dmg' }),
@@ -24,6 +24,13 @@ export function previewVersion(version, build = '0') {
 }
 
 export function fileHash(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex')
+  const file = openSync(path, 'r')
+  const hash = createHash('sha256')
+  const buffer = Buffer.alloc(1024 * 1024)
+  try {
+    let size
+    while ((size = readSync(file, buffer, 0, buffer.length, null)) !== 0) hash.update(buffer.subarray(0, size))
+    return hash.digest('hex')
+  } finally { closeSync(file) }
 }
 

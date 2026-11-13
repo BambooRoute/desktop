@@ -32,7 +32,7 @@ function setup() {
   }
   applyOverrides(checkout)
   const options = ['install', '--frozen-lockfile', '--store-dir', join(root, '.runtime/pnpm-store')]
-  const environment = { ...process.env, CI: 'true' }
+  const environment = { ...process.env, CI: 'true', electron_config_cache: join(root, '.runtime/package-cache/downloads') }
   const npm = process.env.npm_execpath
   if (!npm) throw new Error('Run setup through npm run setup')
   run('git', ['remote', 'set-url', '--push', 'origin', 'DISABLED'])
