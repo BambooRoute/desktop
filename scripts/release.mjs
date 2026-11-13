@@ -7,8 +7,11 @@ try {
   const product = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   const plan = prepareRelease({
     input: join(root, '.local/release-artifacts'), output: join(root, '.local/release-assets'),
-    version: product.version, commit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
-    number: process.env.GITHUB_RUN_NUMBER, attempt: process.env.GITHUB_RUN_ATTEMPT,
+    version: process.env.BAMBOO_RELEASE_VERSION ?? product.version,
+    commit: process.env.BAMBOO_RELEASE_COMMIT ?? process.env.GITHUB_SHA,
+    run: process.env.BAMBOO_RELEASE_RUN ?? process.env.GITHUB_RUN_ID,
+    number: process.env.BAMBOO_RELEASE_NUMBER ?? process.env.GITHUB_RUN_NUMBER,
+    attempt: process.env.BAMBOO_RELEASE_ATTEMPT ?? process.env.GITHUB_RUN_ATTEMPT,
     repository: process.env.GITHUB_REPOSITORY,
   })
   const release = await publishRelease(plan, githubRequest(process.env.GH_TOKEN))
