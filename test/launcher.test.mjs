@@ -8,15 +8,16 @@ import { checkedPath, runtimeEnvironment } from '../scripts/config.mjs'
 import { desktopLauncher, quoteShell } from '../overrides/prepare-app.mjs'
 
 test('launches in Bamboo-owned data directories without inheriting Harness overrides', () => {
-  const environment = runtimeEnvironment('/workspace/bamboo', {
+  const workspace = join(tmpdir(), 'bamboo-launcher-workspace')
+  const environment = runtimeEnvironment(workspace, {
     HOME: '/home/user', PATH: '/usr/bin',
     DSH_HOME: '/official/data', DSH_DESKTOP_DSH_DIR: '/official/runtime',
     DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: '{"origin":"https://example.test"}',
     ELECTRON_RUN_AS_NODE: '1',
   })
   assert.equal(environment.HOME, '/home/user')
-  assert.equal(environment.DSH_HOME, '/workspace/bamboo/.local/bamboo/runtime')
-  assert.equal(environment.DSH_DESKTOP_USER_DATA_DIR, '/workspace/bamboo/.local/bamboo/desktop')
+  assert.equal(environment.DSH_HOME, join(workspace, '.local/bamboo/runtime'))
+  assert.equal(environment.DSH_DESKTOP_USER_DATA_DIR, join(workspace, '.local/bamboo/desktop'))
   assert.equal(environment.DSH_TELEMETRY_DISABLED, '1')
   assert.equal(environment.DSH_DESKTOP_DSH_DIR, undefined)
   assert.equal(environment.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG, undefined)
@@ -24,12 +25,13 @@ test('launches in Bamboo-owned data directories without inheriting Harness overr
 })
 
 test('honors an explicit Bamboo home without changing the system home', () => {
-  const environment = runtimeEnvironment('/workspace', { HOME: '/home/user', BAMBOO_HOME: '/data/Bamboo Work' })
-  assert.equal(environment.DSH_HOME, '/data/Bamboo Work/runtime')
+  const home = join(tmpdir(), 'Bamboo Work')
+  const environment = runtimeEnvironment('/workspace', { HOME: '/home/user', BAMBOO_HOME: home })
+  assert.equal(environment.DSH_HOME, join(home, 'runtime'))
   assert.equal(environment.HOME, '/home/user')
 })
 
-test('launch scripts preserve literal paths and arguments without shell expansion', () => {
+test('launch scripts preserve literal paths and arguments without shell expansion', { skip: process.platform === 'win32' }, () => {
   const directory = mkdtempSync(join(tmpdir(), 'bamboo-launch-'))
   try {
     const appRoot = join(directory, "project ' $(touch injected)")
@@ -52,9 +54,10 @@ test('launch scripts preserve literal paths and arguments without shell expansio
 })
 
 test('rejects paths and shell inputs outside the generated-file contract', () => {
-  assert.equal(checkedPath('/workspace/upstream', 'apps/desktop/src/main.ts'), '/workspace/upstream/apps/desktop/src/main.ts')
+  const workspace = join(tmpdir(), 'bamboo-upstream')
+  assert.equal(checkedPath(workspace, 'apps/desktop/src/main.ts'), join(workspace, 'apps/desktop/src/main.ts'))
   for (const value of ['../outside', '/absolute', '.', '../../']) {
-    assert.throws(() => checkedPath('/workspace/upstream', value))
+    assert.throws(() => checkedPath(workspace, value))
   }
   assert.throws(() => quoteShell('invalid\0path'))
   assert.throws(() => desktopLauncher('/app', '/workspace', { 'BAD;KEY': 'value' }))

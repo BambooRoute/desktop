@@ -9,6 +9,7 @@
   "scripts": {
     "setup": "node scripts/desktop.mjs setup",
     "build": "node scripts/desktop.mjs build",
+    "package": "node scripts/package.mjs",
     "check": "node scripts/desktop.mjs check",
     "dev": "node scripts/desktop.mjs dev",
     "start": "node scripts/desktop.mjs start",

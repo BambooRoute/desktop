@@ -31,6 +31,13 @@ export function applyOverrides(directory) {
     copy(file, 'apps/desktop/src/' + file)
   }
   copy('desktop-account.ts', 'apps/desktop/src/bamboo-desktop.ts')
+  copy('bootstrap.ts', 'apps/desktop/src/bamboo-bootstrap.ts')
+  copy('builder.mjs', 'apps/desktop/scripts/bamboo-builder.mjs')
+  copy('package-assets.mjs', 'apps/desktop/scripts/bamboo-package-assets.mjs')
+  copy('pack-local.ts', 'apps/desktop/scripts/bamboo-pack-local.ts')
+  copy('smoke-package.ts', 'apps/desktop/scripts/bamboo-smoke-package.ts')
+  copy('installed-environment.mjs', 'apps/desktop/src/bamboo-installed-environment.mjs')
+  copy('installed-environment.d.mts', 'apps/desktop/src/bamboo-installed-environment.d.mts')
   copy('preload-account.ts', 'apps/desktop/src/preload-bamboo.ts')
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
   copy('host-bridge.ts', 'apps/desktop-host/src/bamboo-bridge.ts')
@@ -74,7 +81,7 @@ export function applyOverrides(directory) {
     output.set(path, "import './preload-bamboo.ts'\n" + original(path))
   }
   replace('apps/desktop/tsdown.config.ts', [
-    ['    define: clientVersionDefine,', "    define: clientVersionDefine,\n    alias: {\n      './bamboo-account.mjs': fileURLToPath(new URL('./src/bamboo-account.mjs', import.meta.url)),\n      './bamboo-bridge.mjs': fileURLToPath(new URL('./src/bamboo-bridge.mjs', import.meta.url)),\n    },"],
+    ['    define: clientVersionDefine,', "    define: clientVersionDefine,\n    alias: {\n      './bamboo-account.mjs': fileURLToPath(new URL('./src/bamboo-account.mjs', import.meta.url)),\n      './bamboo-bridge.mjs': fileURLToPath(new URL('./src/bamboo-bridge.mjs', import.meta.url)),\n      './bamboo-installed-environment.mjs': fileURLToPath(new URL('./src/bamboo-installed-environment.mjs', import.meta.url)),\n    },"],
   ])
   const clientConfig = JSON.parse(original('apps/desktop/tsconfig.client.json'))
   clientConfig.include.push('src/bamboo-types.ts')
@@ -83,15 +90,16 @@ export function applyOverrides(directory) {
     ["['DSH_', 'ELECTRON_']", "['DSH_', 'ELECTRON_', 'BAMBOO_']"],
   ])
   replace('apps/desktop/src/main.ts', [
+    ["import { installFileActions }", "import './bamboo-bootstrap.ts'\nimport { installFileActions }"],
     ["import { openWelcomeWindow } from './welcome-window.ts'", "import { openWelcomeWindow } from './welcome-window.ts'\nimport { createBambooDesktop } from './bamboo-desktop.ts'"],
     ['async function main(): Promise<void> {', 'async function main(): Promise<void> {\n  const bambooBridge = await createBambooDesktop()'],
     ['operationJournal.enqueue(JSON.stringify(record))\n      })', 'operationJournal.enqueue(JSON.stringify(record))\n      }, bambooBridge)'],
-    ['let focusPrimaryWindow = (): void => {}', "app.setName('Bamboo Desktop')\napp.setAppUserModelId('com.bambooroute.desktop')\n\nlet focusPrimaryWindow = (): void => {}"],
+    ['let focusPrimaryWindow = (): void => {}', "app.setName(process.env.BAMBOO_PRODUCT_NAME ?? 'Bamboo Desktop')\napp.setAppUserModelId(process.env.BAMBOO_APP_ID ?? 'com.bambooroute.desktop')\n\nlet focusPrimaryWindow = (): void => {}"],
     ["app.setAppLogsPath()", "app.setAppLogsPath(join(app.getPath('userData'), 'logs'))"],
     ["readDesktopLocaleCache(app.getPath('userData'))", "readDesktopLocaleCache(app.getPath('userData')) ?? 'en'"],
     ["applicationName: 'DeepSeek Harness'", "applicationName: 'Bamboo Desktop'"],
-    ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient('bamboo')"],
-    ["url === 'dsh://open' || url === 'dsh://open/'", "url === 'bamboo://open' || url === 'bamboo://open/'"],
+    ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient(process.env.BAMBOO_PROTOCOL ?? 'bamboo')"],
+    ["url === 'dsh://open' || url === 'dsh://open/'", "url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open` || url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open/`"],
     ["    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },\n", ''],
     ["    ...process.platform === 'darwin' || process.platform === 'win32'\n      ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],\n", ''],
   ])
