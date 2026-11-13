@@ -50,7 +50,7 @@ jobs:
         with:
           node-version-file: .node-version
       - name: Restore dependency downloads
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             .runtime/pnpm-store
@@ -73,7 +73,7 @@ jobs:
           npm run package -- --target $env:BAMBOO_TARGET 2>&1 | Tee-Object -FilePath ".local/package-$env:BAMBOO_TARGET.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified installer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: bamboo-preview-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
@@ -87,9 +87,10 @@ jobs:
           compression-level: 0
       - name: Upload packaging log
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: bamboo-package-log-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: .local/package-*.log
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

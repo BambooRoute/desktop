@@ -44,6 +44,7 @@ function main() {
   }
   if (process.env.GITHUB_ACTIONS === 'true' && metadata.dirty) throw new Error('CI packaging requires a clean source checkout')
   applyOverrides(checkout)
+  rmSync(resources, { recursive: true, force: true })
   mkdirSync(resources, { recursive: true })
   writeFileSync(join(resources, 'config.json'), JSON.stringify(identity, null, 2) + '\n')
   cpSync(join(root, 'config/profile.patch.json'), join(resources, 'profile.json'))
