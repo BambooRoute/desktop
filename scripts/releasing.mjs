@@ -111,7 +111,7 @@ export async function publishRelease(plan, request) {
   })
   if (release.tag_name !== plan.tag || release.prerelease !== true
     || (release.draft && release.target_commitish !== plan.commit)
-    || release.html_url !== `https://github.com/${plan.repository}/releases/tag/${plan.tag}`) {
+    || (!release.draft && release.html_url !== `https://github.com/${plan.repository}/releases/tag/${plan.tag}`)) {
     throw new Error('Existing release does not match this preview')
   }
   const assetsPath = `${root}/releases/${release.id}/assets?per_page=100`
@@ -143,11 +143,43 @@ export async function publishRelease(plan, request) {
   release = await request(`${root}/releases/${release.id}`, {
     method: 'PATCH', json: { body: plan.body, draft: false, prerelease: true, make_latest: 'false' },
   })
-  if (release.draft || !release.prerelease || !release.published_at) throw new Error('Release publication was not confirmed')
+  if (release.draft || !release.prerelease || !release.published_at
+    || release.html_url !== `https://github.com/${plan.repository}/releases/tag/${plan.tag}`) {
+    throw new Error('Release publication was not confirmed')
+  }
   return release
 }
 
 export function recordRelease(release, summary) {
   console.log(`Published preview: ${release.html_url}`)
   if (summary) appendFileSync(summary, `## Bamboo Desktop preview\n\n[${release.tag_name}](${release.html_url})\n\nBoth installers and all verification assets were checked before publication.\n`)
+}
+
+export async function sourceReleaseRun(repository, runID, request) {
+  if (repository !== 'BambooRoute/desktop' || !/^[1-9]\d*$/.test(runID)) throw new Error('A Bamboo packaging run ID is required')
+  const root = `/repos/${repository}`
+  const run = await request(`${root}/actions/runs/${runID}`)
+  if (String(run.id) !== runID || run.path !== '.github/workflows/desktop-package.yml'
+    || run.status !== 'completed' || run.head_repository?.full_name !== repository
+    || !['workflow_dispatch', 'push'].includes(run.event)
+    || (run.head_branch !== 'main' && !run.head_branch?.startsWith('desktop-preview-'))
+    || !/^[a-f0-9]{40}$/.test(run.head_sha)
+    || !Number.isSafeInteger(run.run_number) || run.run_number < 1
+    || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) {
+    throw new Error('Source must be a completed trusted desktop packaging run')
+  }
+  const { jobs } = await request(`${root}/actions/runs/${runID}/jobs?filter=latest&per_page=100`)
+  for (const target of Object.keys(targets)) {
+    if (!jobs.some(job => job.name === `Package ${target}` && job.conclusion === 'success')) {
+      throw new Error(`Source run has no successful ${target} packaging job`)
+    }
+  }
+  const source = await request(`${root}/contents/package.json?ref=${run.head_sha}`)
+  if (source.encoding !== 'base64') throw new Error('Source package metadata could not be read')
+  const { version } = JSON.parse(Buffer.from(source.content, 'base64').toString('utf8'))
+  previewVersion(version, String(run.run_number))
+  return {
+    run: runID, number: String(run.run_number), attempt: String(run.run_attempt),
+    commit: run.head_sha, version,
+  }
 }

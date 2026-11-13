@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileHash } from '../scripts/packaging.mjs'
-import { prepareRelease, publishRelease } from '../scripts/releasing.mjs'
+import { prepareRelease, publishRelease, sourceReleaseRun } from '../scripts/releasing.mjs'
 
 function fixture(t) {
   const input = mkdtempSync(join(tmpdir(), 'bamboo-release-'))
@@ -106,7 +106,7 @@ function service(plan, initial = null) {
       assert.equal(options.json.draft, true)
       release = {
         id: 1, tag_name: plan.tag, prerelease: true, draft: true, target_commitish: plan.commit,
-        html_url: `https://github.com/${plan.repository}/releases/tag/${plan.tag}`,
+        html_url: `https://github.com/${plan.repository}/releases/tag/untagged-draft`,
       }
       return release
     }
@@ -124,7 +124,10 @@ function service(plan, initial = null) {
     if (options.method === 'PATCH') {
       assert.equal(assets.length, 7)
       assert.equal(options.json.make_latest, 'false')
-      release = { ...release, ...options.json, published_at: '2026-11-13T00:00:00Z' }
+      release = {
+        ...release, ...options.json, published_at: '2026-11-13T00:00:00Z',
+        html_url: `https://github.com/${plan.repository}/releases/tag/${plan.tag}`,
+      }
       return release
     }
     throw new Error(`Unexpected request ${path}`)
@@ -186,4 +189,26 @@ test('rejects a tag that already identifies different source code', async t => {
   const { options } = fixture(t)
   const plan = prepareRelease(options)
   await assert.rejects(publishRelease(plan, async () => ({ object: { type: 'commit', sha: 'b'.repeat(40) } })), /different source commit/)
+})
+
+test('recovery uses the source run provenance after both packaging jobs succeeded', async () => {
+  const source = {
+    id: 1234, run_number: 6, run_attempt: 2, head_sha: 'a'.repeat(40),
+    path: '.github/workflows/desktop-package.yml', head_branch: 'main', event: 'workflow_dispatch',
+    status: 'completed', conclusion: 'failure', head_repository: { full_name: 'BambooRoute/desktop' },
+  }
+  const jobs = ['mac-arm64', 'win-x64'].map(target => ({ name: `Package ${target}`, conclusion: 'success' }))
+  const request = async path => path.includes('/jobs?') ? { jobs }
+    : path.includes('/contents/') ? { encoding: 'base64', content: Buffer.from('{"version":"0.1.0"}').toString('base64') }
+      : source
+  assert.deepEqual(await sourceReleaseRun('BambooRoute/desktop', '1234', request), {
+    run: '1234', number: '6', attempt: '2', commit: source.head_sha, version: '0.1.0',
+  })
+  jobs[1].conclusion = 'failure'
+  await assert.rejects(sourceReleaseRun('BambooRoute/desktop', '1234', request), /no successful win-x64/)
+  source.head_branch = 'untrusted-feature'
+  await assert.rejects(sourceReleaseRun('BambooRoute/desktop', '1234', request), /trusted/)
+  source.head_branch = 'main'
+  source.path = '.github/workflows/other.yml'
+  await assert.rejects(sourceReleaseRun('BambooRoute/desktop', '1234', request), /trusted/)
 })
