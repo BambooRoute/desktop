@@ -48,13 +48,13 @@ export async function createBambooBridge(account) {
         return
       }
       const body = await readBody(request)
-      const { response: upstream, release } = await account.inference(body, Number(match[1]), controller.signal)
+      const { response: upstream, release, currency } = await account.inference(body, Number(match[1]), controller.signal)
       try {
         if (!upstream.ok) {
           let value
           try { value = await upstream.json() } catch { value = null }
           const code = typeof value?.error?.code === 'string' ? value.error.code : 'gateway_error'
-          reply(response, upstream.status, { error: { code, message: userError(code, upstream.status) } })
+          reply(response, upstream.status, { error: { code, message: userError(code, upstream.status, currency) } })
           return
         }
         const contentType = upstream.headers.get('content-type') || ''

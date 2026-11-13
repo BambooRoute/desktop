@@ -1,0 +1,8 @@
+{
+  "channel": "preview",
+  "productName": "Bamboo Desktop Preview",
+  "appId": "com.bambooroute.desktop.preview",
+  "protocol": "bamboo-preview",
+  "site": "https://bambooroute.com",
+  "gateway": "https://api.bambooroute.com"
+}

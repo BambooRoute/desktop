@@ -1,0 +1,96 @@
+name: Desktop preview packages
+
+on:
+  push:
+    tags:
+      - desktop-preview-*
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Platform to package
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - mac-arm64
+          - win-x64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-package-${{ github.ref }}-${{ inputs.target || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON((inputs.target == 'all' || inputs.target == '') && '["mac-arm64","win-x64"]' || format('["{0}"]', inputs.target)) }}
+    runs-on: ${{ matrix.target == 'mac-arm64' && 'macos-15' || 'windows-2025' }}
+    timeout-minutes: 120
+    env:
+      BAMBOO_TARGET: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: ${{ matrix.target == 'win-x64' && 'pwsh' || 'bash' }}
+    steps:
+      - name: Configure Windows paths
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+      - name: Check out Bamboo
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .node-version
+      - name: Restore dependency downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            .runtime/pnpm-store
+            .runtime/package-cache/downloads
+          key: desktop-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'config/upstream.json') }}
+      - name: Install pinned upstream
+        run: npm run setup
+      - name: Test Bamboo
+        run: npm test
+      - name: Build and verify macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p .local
+          set -o pipefail
+          npm run package -- --target "$BAMBOO_TARGET" 2>&1 | tee ".local/package-$BAMBOO_TARGET.log"
+      - name: Build and verify Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force .local | Out-Null
+          npm run package -- --target $env:BAMBOO_TARGET 2>&1 | Tee-Object -FilePath ".local/package-$env:BAMBOO_TARGET.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload verified installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: bamboo-preview-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            dist/${{ matrix.target }}/*.dmg
+            dist/${{ matrix.target }}/*.exe
+            dist/${{ matrix.target }}/SHA256SUMS
+            dist/${{ matrix.target }}/build-manifest.json
+            dist/${{ matrix.target }}/verification.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload packaging log
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: bamboo-package-log-${{ matrix.target }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: .local/package-*.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

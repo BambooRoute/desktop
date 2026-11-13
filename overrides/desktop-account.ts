@@ -58,7 +58,10 @@ export async function createBambooDesktop() {
     })
   }
   handle('state', () => bambooAccount().state())
-  handle('sign-in', () => bambooAccount().signIn())
+  handle('sign-in', currency => {
+    if (currency !== 'USD' && currency !== 'CNY') throw new BambooError('invalid_currency', 'Choose USD or CNY as the billing currency.')
+    return bambooAccount().signIn(currency)
+  })
   handle('cancel', () => bambooAccount().cancel())
   handle('refresh', () => bambooAccount().refresh(true))
   handle('sign-out', () => bambooAccount().signOut())

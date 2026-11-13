@@ -28,3 +28,6 @@ body[data-ds-dark-theme] .bamboo-error { color: #ffb4a8; }
 .bamboo-secondary { padding: 14px 20px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--bamboo-muted); border-radius: 9px; cursor: pointer; }
 .bamboo-secondary:focus-visible { outline: 3px solid #73975c; outline-offset: 4px; }
 .bamboo-secondary:disabled { opacity: .65; cursor: wait; }
+
+.bamboo-currency { display: flex; flex-direction: column; gap: 8px; margin: 0 0 18px; font-size: 13px; color: #315541; }
+.bamboo-currency select { min-width: 240px; border: 1px solid #c4d6be; border-radius: 8px; background: #fff; color: #244c38; padding: 10px 12px; font: inherit; }

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { watchBambooCatalog } from '../../../packages/client/ui-model-selection/src/client/bamboo-account.ts'
 
 it('invalidates an empty catalog after sign-in, account changes and sign-out', async () => {
-  let receive: (state: { status: string; models: unknown[]; account?: { email: string } }) => void = () => {}
+  let receive: (state: { status: string; models: unknown[]; account?: { email: string; currency: string } }) => void = () => {}
   const unsubscribe = vi.fn()
   const refresh = vi.fn()
   const stop = watchBambooCatalog({
@@ -10,11 +10,11 @@ it('invalidates an empty catalog after sign-in, account changes and sign-out', a
     subscribe(listener) { receive = listener; return unsubscribe },
   }, refresh)
   await Promise.resolve()
-  const state = { status: 'signed-in', models: [{ id: 'model-a' }], account: { email: 'first@example.test' } }
+  const state = { status: 'signed-in', models: [{ id: 'model-a' }], account: { email: 'first@example.test', currency: 'USD' } }
   receive(state)
   receive(state)
   expect(refresh).toHaveBeenCalledTimes(2)
-  receive({ ...state, account: { email: 'second@example.test' } })
+  receive({ ...state, account: { email: 'first@example.test', currency: 'CNY' } })
   receive({ status: 'signed-out', models: [] })
   expect(refresh).toHaveBeenCalledTimes(4)
   stop()

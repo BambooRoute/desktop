@@ -31,6 +31,19 @@ export function applyOverrides(directory) {
     copy(file, 'apps/desktop/src/' + file)
   }
   copy('desktop-account.ts', 'apps/desktop/src/bamboo-desktop.ts')
+  copy('bootstrap.ts', 'apps/desktop/src/bamboo-bootstrap.ts')
+  copy('builder.mjs', 'apps/desktop/scripts/bamboo-builder.mjs')
+  copy('package-assets.mjs', 'apps/desktop/scripts/bamboo-package-assets.mjs')
+  copy('pack-local.ts', 'apps/desktop/scripts/bamboo-pack-local.ts')
+  copy('smoke-package.ts', 'apps/desktop/scripts/bamboo-smoke-package.ts')
+  copy('installed-environment.mjs', 'apps/desktop/src/bamboo-installed-environment.mjs')
+  copy('installed-environment.d.mts', 'apps/desktop/src/bamboo-installed-environment.d.mts')
+  replace('apps/desktop/scripts/prepare-runtime.ts', [
+    ['artifactName: \'electron\', cacheRoot: BUILD_PATHS.downloads', "artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads, checksums: require('electron/checksums.json') as Record<string, string>"],
+  ])
+  replace('apps/desktop/scripts/smoke-runtime.ts', [
+    ['- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n', '- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n- id: web-runtime\\n  config:\\n    openBrowser: false\\n    printUrl: false\\n    surfaceContext: true\\n'],
+  ])
   copy('preload-account.ts', 'apps/desktop/src/preload-bamboo.ts')
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
   copy('host-bridge.ts', 'apps/desktop-host/src/bamboo-bridge.ts')
@@ -40,6 +53,7 @@ export function applyOverrides(directory) {
   copy('AccountPanel.module.css', 'packages/client/ui-settings-account/src/client/BambooAccount.module.css')
   copy('bamboo-types.ts', 'packages/client/ui-settings-account/src/client/bamboo-types.ts')
   copy('catalog-account.ts', 'packages/client/ui-model-selection/src/client/bamboo-account.ts')
+  output.set('apps/desktop/tests/bamboo-account.client.spec.tsx', readFileSync(join(root, 'test/account.client.spec.tsx')))
   output.set('apps/desktop/tests/bamboo-welcome.client.spec.tsx', readFileSync(join(root, 'test/welcome.client.spec.tsx')))
   output.set('apps/desktop/tests/welcome-host.spec.ts', readFileSync(join(root, 'test/welcome-host.spec.ts')))
   output.set('apps/desktop/tests/bamboo-catalog.client.spec.tsx', readFileSync(join(root, 'test/catalog-account.spec.ts')))
@@ -73,7 +87,7 @@ export function applyOverrides(directory) {
     output.set(path, "import './preload-bamboo.ts'\n" + original(path))
   }
   replace('apps/desktop/tsdown.config.ts', [
-    ['    define: clientVersionDefine,', "    define: clientVersionDefine,\n    alias: {\n      './bamboo-account.mjs': fileURLToPath(new URL('./src/bamboo-account.mjs', import.meta.url)),\n      './bamboo-bridge.mjs': fileURLToPath(new URL('./src/bamboo-bridge.mjs', import.meta.url)),\n    },"],
+    ['    define: clientVersionDefine,', "    define: clientVersionDefine,\n    alias: {\n      './bamboo-account.mjs': fileURLToPath(new URL('./src/bamboo-account.mjs', import.meta.url)),\n      './bamboo-bridge.mjs': fileURLToPath(new URL('./src/bamboo-bridge.mjs', import.meta.url)),\n      './bamboo-installed-environment.mjs': fileURLToPath(new URL('./src/bamboo-installed-environment.mjs', import.meta.url)),\n    },"],
   ])
   const clientConfig = JSON.parse(original('apps/desktop/tsconfig.client.json'))
   clientConfig.include.push('src/bamboo-types.ts')
@@ -82,15 +96,16 @@ export function applyOverrides(directory) {
     ["['DSH_', 'ELECTRON_']", "['DSH_', 'ELECTRON_', 'BAMBOO_']"],
   ])
   replace('apps/desktop/src/main.ts', [
+    ["import { installFileActions }", "import './bamboo-bootstrap.ts'\nimport { installFileActions }"],
     ["import { openWelcomeWindow } from './welcome-window.ts'", "import { openWelcomeWindow } from './welcome-window.ts'\nimport { createBambooDesktop } from './bamboo-desktop.ts'"],
     ['async function main(): Promise<void> {', 'async function main(): Promise<void> {\n  const bambooBridge = await createBambooDesktop()'],
     ['operationJournal.enqueue(JSON.stringify(record))\n      })', 'operationJournal.enqueue(JSON.stringify(record))\n      }, bambooBridge)'],
-    ['let focusPrimaryWindow = (): void => {}', "app.setName('Bamboo Desktop')\napp.setAppUserModelId('com.bambooroute.desktop')\n\nlet focusPrimaryWindow = (): void => {}"],
+    ['let focusPrimaryWindow = (): void => {}', "app.setName(process.env.BAMBOO_PRODUCT_NAME ?? 'Bamboo Desktop')\napp.setAppUserModelId(process.env.BAMBOO_APP_ID ?? 'com.bambooroute.desktop')\n\nlet focusPrimaryWindow = (): void => {}"],
     ["app.setAppLogsPath()", "app.setAppLogsPath(join(app.getPath('userData'), 'logs'))"],
     ["readDesktopLocaleCache(app.getPath('userData'))", "readDesktopLocaleCache(app.getPath('userData')) ?? 'en'"],
     ["applicationName: 'DeepSeek Harness'", "applicationName: 'Bamboo Desktop'"],
-    ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient('bamboo')"],
-    ["url === 'dsh://open' || url === 'dsh://open/'", "url === 'bamboo://open' || url === 'bamboo://open/'"],
+    ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient(process.env.BAMBOO_PROTOCOL ?? 'bamboo')"],
+    ["url === 'dsh://open' || url === 'dsh://open/'", "url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open` || url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open/`"],
     ["    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },\n", ''],
     ["    ...process.platform === 'darwin' || process.platform === 'win32'\n      ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],\n", ''],
   ])

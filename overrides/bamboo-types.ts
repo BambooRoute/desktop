@@ -1,9 +1,13 @@
+export type Currency = 'USD' | 'CNY'
+export interface Wallet { currency: Currency; balance: string; reserved: string; available: string }
+
 export interface BambooModel {
   id: string
   name: string
   provider: string
   maxOutput: number
   vision: boolean
+  currency: Currency
   prices: Record<string, string>
 }
 
@@ -12,6 +16,8 @@ export interface BambooState {
   code?: string
   expiresAt?: number
   canCall: boolean
+  activeCalls: number
+  pendingCurrency?: Currency
   error?: string
   notice?: string
   models: BambooModel[]
@@ -21,13 +27,16 @@ export interface BambooState {
     modelAccess: boolean
     policyReady: boolean
     policyAccepted: boolean
-    wallet: { balance: string; reserved: string; available: string }
+    currency: Currency
+    wallet: Wallet
+    wallets: Wallet[]
+    topupCurrencies: Currency[]
   }
 }
 
 export interface BambooApi {
   state(): Promise<BambooState>
-  signIn(): Promise<BambooState>
+  signIn(currency: Currency): Promise<BambooState>
   cancel(): Promise<BambooState>
   refresh(): Promise<BambooState>
   signOut(): Promise<BambooState>

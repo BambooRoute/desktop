@@ -5,7 +5,7 @@ import type { BambooApi, BambooState } from '../src/bamboo-types.ts'
 
 afterEach(cleanup)
 
-function fixture(initial: BambooState = { status: 'signed-out', models: [], canCall: false }) {
+function fixture(initial: BambooState = { status: 'signed-out', models: [], canCall: false, activeCalls: 0 }) {
   let receive: (value: BambooState) => void = () => {}
   const account: BambooApi = { state: vi.fn(async () => initial), signIn: vi.fn(async () => initial), cancel: vi.fn(async () => initial),
     refresh: vi.fn(async () => initial), signOut: vi.fn(async () => initial), openPage: vi.fn(async () => {}), openBrowser: vi.fn(async () => {}),
@@ -21,11 +21,13 @@ it('starts browser sign-in once and shows the code without a credential field', 
   render(<Welcome api={{ skip: vi.fn() }} account={f.account} />)
   await act(async () => {})
   const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Sign in to Bamboo' })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Billing currency' }), { target: { value: 'CNY' } })
   fireEvent.click(button); fireEvent.click(button)
   expect(f.account.signIn).toHaveBeenCalledTimes(1)
+  expect(f.account.signIn).toHaveBeenCalledWith('CNY')
   expect(button.disabled).toBe(true)
   await act(async () => {
-    const state: BambooState = { status: 'waiting', models: [], canCall: false, code: 'ABCD-EFGH' }
+    const state: BambooState = { status: 'waiting', models: [], canCall: false, activeCalls: 0, code: 'ABCD-EFGH', pendingCurrency: 'CNY' }
     f.update(state); pending.resolve(state)
   })
   expect(screen.getByText('ABCD-EFGH')).toBeTruthy()
@@ -39,7 +41,7 @@ it('opens after sign-in and permits retry without private diagnostics', async ()
   const skip = vi.fn().mockRejectedValueOnce(new Error('private token')).mockResolvedValueOnce(undefined)
   render(<Welcome api={{ skip }} account={f.account} />)
   await act(async () => {})
-  await act(async () => { f.update({ status: 'signed-in', models: [], canCall: false }) })
+  await act(async () => { f.update({ status: 'signed-in', models: [], canCall: false, activeCalls: 0 }) })
   expect(skip).toHaveBeenCalledTimes(1)
   expect(screen.getByRole('alert').textContent).toBe('The workspace could not open. Please try again.')
   expect(document.body.textContent).not.toContain('private token')

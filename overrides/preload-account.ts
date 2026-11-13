@@ -3,7 +3,7 @@ import type { BambooApi, BambooState } from './bamboo-types.ts'
 
 const api: BambooApi = {
   state: () => ipcRenderer.invoke('bamboo-account:state') as Promise<BambooState>,
-  signIn: () => ipcRenderer.invoke('bamboo-account:sign-in') as Promise<BambooState>,
+  signIn: currency => ipcRenderer.invoke('bamboo-account:sign-in', currency) as Promise<BambooState>,
   cancel: () => ipcRenderer.invoke('bamboo-account:cancel') as Promise<BambooState>,
   refresh: () => ipcRenderer.invoke('bamboo-account:refresh') as Promise<BambooState>,
   signOut: () => ipcRenderer.invoke('bamboo-account:sign-out') as Promise<BambooState>,

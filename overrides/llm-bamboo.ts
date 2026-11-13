@@ -7,7 +7,7 @@ import { PiAiAdapter } from './adapter.ts'
 import { resolveProfiles } from './config.ts'
 import { credentialStoreFrom, authContextFrom } from './auth.ts'
 
-interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; prices: Record<string, string> }
+interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
 
@@ -79,7 +79,7 @@ export class BambooAdapter extends LlmAdapter {
     return this.models.map(model => ({ provider, id: model.id, name: model.name,
       inputModalities: model.vision ? ['text', 'image'] : ['text'],
       description: `${model.provider}${model.prices.input !== undefined && model.prices.output !== undefined
-        ? ` · $${model.prices.input} input / $${model.prices.output} output per 1M tokens` : ''}` }))
+        ? ` · ${model.currency} ${model.prices.input} input / ${model.currency} ${model.prices.output} output per 1M tokens` : ''}` }))
   }
 
   private configured(model: string): PiAiAdapter {
