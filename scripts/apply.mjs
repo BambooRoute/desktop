@@ -42,7 +42,7 @@ export function applyOverrides(directory) {
     ['artifactName: \'electron\', cacheRoot: BUILD_PATHS.downloads', "artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads, checksums: require('electron/checksums.json') as Record<string, string>"],
   ])
   replace('apps/desktop/scripts/smoke-runtime.ts', [
-    ['- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n', '- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n- id: web-runtime\\n  config:\\n    printUrl: false\\n'],
+    ['- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n', '- id: webserver\\n  config:\\n    host: 127.0.0.1\\n    port: 0\\n- id: web-runtime\\n  config:\\n    openBrowser: false\\n    printUrl: false\\n    surfaceContext: true\\n'],
   ])
   copy('preload-account.ts', 'apps/desktop/src/preload-bamboo.ts')
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
