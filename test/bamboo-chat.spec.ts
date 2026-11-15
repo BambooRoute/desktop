@@ -1,6 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { idleWatchdog } from '@deepseek-ai/dsh-timeout'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { BambooAdapter } from '../src/bamboo.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -74,5 +76,40 @@ it('waits for a quiet model that sends only a final text answer', async () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   } finally {
     vi.mocked(idleWatchdog).mockReset()
+  }
+})
+
+it('shows a gateway model refusal and identifies the request', async () => {
+  const requestId = 'req_' + 'b'.repeat(32)
+  let calls = 0
+  const server = createServer((request, response) => {
+    if (request.url === '/catalog') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(catalog.body)
+      return
+    }
+    request.resume()
+    calls++
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'x-request-id': requestId })
+    const failure = {
+      type: 'error',
+      error: { type: 'upstream_refused', code: 'upstream_refused', message: 'The model declined this request. Revise the message and try again.', request_id: requestId },
+      partial: false,
+    }
+    response.end(`event: error\ndata: ${JSON.stringify(failure)}\n\n`)
+  }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to an IP port')
+    const adapter = new BambooAdapter(new Context(), { url: `http://127.0.0.1:${address.port}`, token: 'mock-token' })
+    const chunks = await collect(adapter.stream({ provider: 'bamboo', model: 'chat', messages }))
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'UPSTREAM_REFUSED', requestId, message: expect.stringContaining(requestId) } },
+    })
+    expect(calls).toBe(1)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => { server.close(() => resolve()) })
   }
 })

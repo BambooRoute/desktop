@@ -74,11 +74,15 @@ export function applyOverrides(directory) {
     ['export function apply(ctx: Context, config: Config): void {', 'export function apply(ctx: Context, config: Config): void {\n  if (applyBamboo(ctx)) return'],
   ])
   replace('packages/llm/llm-pi-ai/src/adapter.ts', [
-    ['export interface PiAiAdapterOptions {', 'export interface PiAiAdapterOptions {\n  waitForUpstream?: boolean'],
+    ['  ImageAttachmentAccess,\n  LlmModelInfo,', '  ImageAttachmentAccess,\n  LlmFailure,\n  LlmModelInfo,'],
+    ['export interface PiAiAdapterOptions {', 'export interface PiAiAdapterOptions {\n  waitForUpstream?: boolean\n  mapFailure?: (failure: LlmFailure, headers?: Readonly<Record<string, string>>) => LlmFailure'],
     ["    using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')", "    using watchdog = this.config.waitForUpstream ? undefined : idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')\n    const streamSignal = watchdog?.signal ?? upstream"],
     ['{ ...request, signal: watchdog.signal }', '{ ...request, signal: streamSignal }'],
     ['        signal: watchdog.signal,', '        signal: streamSignal,'],
+    ['      const events = snapshot.models.streamSimple', '      const mapFailure = this.config.mapFailure\n      let responseHeaders: Readonly<Record<string, string>> | undefined\n      const events = snapshot.models.streamSimple'],
+    ['        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),', '        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),\n        onResponse: mapFailure ? ({ headers }) => { responseHeaders = headers } : undefined,'],
     ['await watchdog.next(iterator)', 'await (watchdog?.next(iterator) ?? iterator.next())'],
+    ['          yield result.value', "          const chunk = result.value\n          if (mapFailure && chunk.type === 'finish' && chunk.reason.kind === 'error') {\n            yield { ...chunk, reason: { kind: 'error', failure: mapFailure(chunk.reason.failure, responseHeaders) } }\n          } else {\n            yield chunk\n          }"],
     ["if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)", "if (watchdog && timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)"],
   ])
   replace('packages/api/session-controller/src/catalog.ts', [

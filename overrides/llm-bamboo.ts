@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ProviderRequestId, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmFailure, LlmModelInfo, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-fs'
 import { PiAiAdapter } from './adapter.ts'
@@ -10,6 +10,21 @@ import { credentialStoreFrom, authContextFrom } from './auth.ts'
 interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
+const gatewayRefusalMessage = 'The model declined this request. Revise the message and try again.'
+
+function modelFailure(failure: LlmFailure, headers?: Readonly<Record<string, string>>): LlmFailure {
+  const refused = failure.message === gatewayRefusalMessage || failure.message === 'Provider finish_reason: content_filter'
+  const header = headers?.['x-request-id']
+  const requestId = header && /^req_[a-f0-9]{32}$/.test(header) ? ProviderRequestId(header) : undefined
+  if (!refused && !requestId) return failure
+  const message = refused ? 'The model declined this request. Try starting a new chat with a revised message.' : failure.message
+  return {
+    ...failure,
+    code: refused ? 'UPSTREAM_REFUSED' : failure.code,
+    ...requestId === undefined ? {} : { requestId },
+    message: requestId && !message.includes(requestId) ? `${message} Request ID: ${requestId}.` : message,
+  }
+}
 
 async function* chatStream(call: PreparedAdapterCall, options: GenerateOptions): AsyncIterable<StreamChunk> {
   if (options.tools?.some(tool => tool.name === 'exit_plan_mode')) {
@@ -72,6 +87,7 @@ export class BambooAdapter extends LlmAdapter {
           } })
           this.adapter = new PiAiAdapter({ profiles: () => profiles, resolveApiKey: async () => this.bridge.token,
             waitForUpstream: true,
+            mapFailure: modelFailure,
             auth: { credentials: credentialStoreFrom(this.ctx), authContext: authContextFrom(this.ctx) },
             resolveAttachments: () => this.ctx.get('attachments'),
             resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments,
