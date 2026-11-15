@@ -72,13 +72,15 @@ export function parseModels(value, currency) {
     }
     seen.add(model.id)
     if (model.capabilities.chat !== true) return []
+    const contextWindow = [model.context_window_tokens, model.max_input_tokens].find(limit => Number.isSafeInteger(limit) && limit > 0)
+    if (contextWindow === undefined) return []
     const prices = {}
     for (const field of ['input', 'output', 'cache_read', 'cache_write']) {
       const price = model.sell?.[field]
       if (price !== undefined && !validAmount(price)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model price.', 502, 'invalid_price')
       if (price !== undefined) prices[field] = price
     }
-    return [{ id: model.id, name: model.name, provider: model.provider, maxOutput: model.max_output_tokens,
+    return [{ id: model.id, name: model.name, provider: model.provider, contextWindow, maxOutput: model.max_output_tokens,
       vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency, prices }]
   })
 }

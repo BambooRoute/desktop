@@ -5,6 +5,7 @@ export interface BambooModel {
   id: string
   name: string
   provider: string
+  contextWindow: number
   maxOutput: number
   vision: boolean
   tools: boolean

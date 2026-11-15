@@ -7,7 +7,7 @@ import { PiAiAdapter } from './adapter.ts'
 import { resolveProfiles } from './config.ts'
 import { credentialStoreFrom, authContextFrom } from './auth.ts'
 
-interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
+interface Model { id: string; name: string; provider: string; contextWindow: number; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
 const gatewayRefusalMessage = 'The model declined this request. Revise the message and try again.'
@@ -66,7 +66,8 @@ export class BambooAdapter extends LlmAdapter {
       } catch { throw new LlmError('Bamboo account is unavailable. Open Settings → Bamboo account and refresh.', 'TRANSPORT') }
       if (!response.ok) throw new LlmError('Bamboo account could not be loaded. Open Settings → Bamboo account and refresh.', 'TRANSPORT')
       const catalog = await response.json() as { generation: number; models: Model[] }
-      if (!Number.isSafeInteger(catalog.generation) || !Array.isArray(catalog.models) || catalog.models.some(model => typeof model?.tools !== 'boolean')) {
+      if (!Number.isSafeInteger(catalog.generation) || !Array.isArray(catalog.models) || catalog.models.some(model =>
+        typeof model?.tools !== 'boolean' || !Number.isSafeInteger(model.contextWindow) || model.contextWindow < 1)) {
         throw new LlmError('Bamboo returned an invalid model catalog.', 'CONFIG')
       }
       const fingerprint = JSON.stringify(catalog)
@@ -78,11 +79,11 @@ export class BambooAdapter extends LlmAdapter {
           const profiles = resolveProfiles({ bamboo: {
             displayName: 'Bamboo', api: 'openai-completions', apiKeyEnv: 'BAMBOO_PRIVATE_PROXY',
             baseURL: `${this.bridge.url}/session/${catalog.generation}/v1`,
-            defaultContextWindow: 32768, retryPolicy: { mode: 'normal', maxRetries: 0 },
+            retryPolicy: { mode: 'normal', maxRetries: 0 },
             compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
               supportsUsageInStreaming: true, supportsStrictMode: false, maxTokensField: 'max_tokens',
               requiresReasoningContentOnAssistantMessages: true },
-            models: catalog.models.map(model => ({ id: model.id, name: model.name, maxTokens: model.maxOutput,
+            models: catalog.models.map(model => ({ id: model.id, name: model.name, contextWindow: model.contextWindow, maxTokens: model.maxOutput,
               input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: false })),
           } })
           this.adapter = new PiAiAdapter({ profiles: () => profiles, resolveApiKey: async () => this.bridge.token,

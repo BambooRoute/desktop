@@ -45,7 +45,7 @@ function fixture(currency: 'USD' | 'CNY' = 'USD', activeCalls = 0) {
   const state: BambooState = { status: 'signed-in', canCall: true, activeCalls,
     account: { email: 'member@example.test', emailVerified: true, modelAccess: true, policyReady: true, policyAccepted: true,
       currency, wallets, wallet: wallets.find(wallet => wallet.currency === currency)!, topupCurrencies: ['USD'] },
-    models: [{ id: 'model', name: 'Model', provider: 'deepseek', maxOutput: 800, vision: false, tools: false, currency, prices: { input: '0.123456789', output: '1.23' } }],
+    models: [{ id: 'model', name: 'Model', provider: 'deepseek', contextWindow: 65_536, maxOutput: 800, vision: false, tools: false, currency, prices: { input: '0.123456789', output: '1.23' } }],
   }
   let receive: (value: BambooState) => void = () => {}
   const api: BambooApi = { state: vi.fn(async () => state), signIn: vi.fn(async () => state), cancel: vi.fn(async () => state), refresh: vi.fn(async () => state),

@@ -13,7 +13,7 @@ const session = { email: 'member@example.test', email_verified: true, model_acce
     { currency: 'USD', balance: '10', reserved: '0.3', available: '9.7' },
     { currency: 'CNY', balance: '70', reserved: '1.1', available: '68.9' }]  }
 const model = { currency: 'USD', id: 'bamboo-test', name: 'Bamboo Test', provider: 'deepseek', max_output_tokens: 800,
-  capabilities: { chat: true, tools: true, vision: false }, sell: { input: '0.12', output: '0.3', cache_read: '0.01' } }
+  context_window_tokens: 65_536, capabilities: { chat: true, tools: true, vision: false }, sell: { input: '0.12', output: '0.3', cache_read: '0.01' } }
 const sse = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"Read","arguments":"{}"}}]},"finish_reason":null}]}\n\n'
   + 'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n'
 
@@ -215,6 +215,18 @@ test('service origins and catalog capabilities are validated before use', () => 
   assert.throws(() => parseModels([{ ...model, max_output_tokens: -1 }], 'USD'))
   assert.equal(parseModels([{ ...model, capabilities: { chat: true, tools: false } }], 'USD')[0].tools, false)
   assert.deepEqual(parseModels([{ ...model, capabilities: { chat: false, images: true } }], 'USD'), [])
+})
+
+test('the catalog uses per-model token limits and allows independent input limits', () => {
+  const models = parseModels([
+    { ...model, id: 'claude-opus-5-5', context_window_tokens: 1_000_000, max_input_tokens: 872_000, max_output_tokens: 128_000 },
+    { ...model, id: 'gemini-3.5-flash', context_window_tokens: null, max_input_tokens: 1_048_576, max_output_tokens: 65_536 },
+    { ...model, id: 'missing-limits', context_window_tokens: null },
+  ], 'USD')
+  assert.deepEqual(models.map(({ id, contextWindow, maxOutput }) => [id, contextWindow, maxOutput]), [
+    ['claude-opus-5-5', 1_000_000, 128_000],
+    ['gemini-3.5-flash', 1_048_576, 65_536],
+  ])
 })
 
 

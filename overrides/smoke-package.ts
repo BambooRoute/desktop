@@ -52,7 +52,7 @@ const server = createServer((request, response) => {
   }
   catalogRequests++
   response.end(JSON.stringify({ generation: 1, models: [{ id: 'packaging-smoke', name: 'Packaging smoke', provider: 'test',
-    maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: { input: '0', output: '0' } }] }))
+    contextWindow: 65_536, maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: { input: '0', output: '0' } }] }))
 })
 await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
 const address = server.address()

@@ -12,8 +12,8 @@ vi.mock('@deepseek-ai/dsh-timeout', async (importOriginal) => {
   return { ...original, idleWatchdog: vi.fn(original.idleWatchdog) }
 })
 
-const chat = { id: 'chat', name: 'Bamboo Chat', provider: 'deepseek', maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: {} }
-const agent = { ...chat, id: 'agent', name: 'Bamboo Agent', tools: true }
+const chat = { id: 'chat', name: 'Bamboo Chat', provider: 'deepseek', contextWindow: 65_536, maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: {} }
+const agent = { ...chat, id: 'agent', name: 'Bamboo Agent', contextWindow: 1_000_000, maxOutput: 128_000, tools: true }
 const catalog = { body: JSON.stringify({ generation: 1, models: [chat, agent] }) }
 const messages = [createUserMessage({ content: [{ type: 'text', text: 'Say hello.' }], source: { kind: 'user' } })]
 const tool = { name: 'read', description: 'Read a local file', parameters: { type: 'object' as const, properties: {} } }
@@ -26,7 +26,7 @@ async function collect(stream: AsyncIterable<StreamChunk>) {
 
 afterEach(closeMockServers)
 
-it('lists original model names and sends tools only to models that support them', async () => {
+it('uses each model’s token limits and sends tools only to models that support them', async () => {
   const server = await mockServer([catalog, catalog, { events: textEvents }, catalog, { events: textEvents }])
   const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
 
@@ -34,16 +34,31 @@ it('lists original model names and sends tools only to models that support them'
   expect(models.map(({ name }) => name)).toEqual(['Bamboo Chat', 'Bamboo Agent'])
 
   const prepared = await adapter.prepareCall('bamboo', 'chat')
-  expect(prepared.model.name).toBe('Bamboo Chat')
+  expect(prepared.model).toMatchObject({ name: 'Bamboo Chat', context: { contextWindow: 65_536 }, defaultMaxTokens: 1024 })
   const chatResult = await collect(prepared.stream({ provider: 'bamboo', model: 'chat', messages, tools: [tool] }))
   expect(chatResult).toContainEqual({ type: 'text-delta', index: 0, text: 'hello' })
   expect(chatResult.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   expect(server.requests[2]).not.toHaveProperty('tools')
-  expect(server.requests[2]).toMatchObject({ model: 'chat', messages: [{ role: 'system', content: expect.stringContaining('Workspace tools are disabled') }, { role: 'user', content: 'Say hello.' }] })
+  expect(server.requests[2]).toMatchObject({ model: 'chat', max_tokens: 1024, messages: [{ role: 'system', content: expect.stringContaining('Workspace tools are disabled') }, { role: 'user', content: 'Say hello.' }] })
 
-  await collect(adapter.stream({ provider: 'bamboo', model: 'agent', messages, tools: [tool] }))
-  expect(server.requests[4]).toMatchObject({ model: 'agent', tools: [{ type: 'function', function: { name: 'read' } }] })
+  const toolCall = await adapter.prepareCall('bamboo', 'agent')
+  expect(toolCall.model).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 128_000 })
+  await collect(toolCall.stream({ provider: 'bamboo', model: 'agent', messages, tools: [tool] }))
+  expect(server.requests[4]).toMatchObject({ model: 'agent', max_tokens: 128_000, tools: [{ type: 'function', function: { name: 'read' } }] })
   expect(server.paths).toEqual(['/catalog', '/catalog', '/session/1/v1/chat/completions', '/catalog', '/session/1/v1/chat/completions'])
+})
+
+it('refreshes token limits when the catalog changes within a signed-in session', async () => {
+  const updated = { ...agent, contextWindow: 200_000, maxOutput: 64_000 }
+  const server = await mockServer([catalog, { body: JSON.stringify({ generation: 1, models: [chat, updated] }) }])
+  const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
+
+  await expect(adapter.resolveModel('bamboo', 'agent')).resolves.toMatchObject({
+    context: { contextWindow: 1_000_000 }, defaultMaxTokens: 128_000,
+  })
+  await expect(adapter.resolveModel('bamboo', 'agent')).resolves.toMatchObject({
+    context: { contextWindow: 200_000 }, defaultMaxTokens: 64_000,
+  })
 })
 
 it('rejects plan mode and unsolicited tool calls for a model without tool support', async () => {
