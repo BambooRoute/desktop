@@ -9,6 +9,9 @@ import { credentialStoreFrom, authContextFrom } from './auth.ts'
 
 interface Model { id: string; name: string; provider: string; contextWindow: number; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
+const accountStatuses = ['signed-out', 'connecting', 'waiting', 'signed-in'] as const
+type AccountStatus = typeof accountStatuses[number]
+interface Catalog { generation: number; status: AccountStatus; models: Model[]; error?: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
 const gatewayRefusalMessage = 'The model declined this request. Revise the message and try again.'
 
@@ -47,6 +50,8 @@ async function* chatStream(call: PreparedAdapterCall, options: GenerateOptions):
 export class BambooAdapter extends LlmAdapter {
   private adapter: PiAiAdapter | undefined
   private models: Model[] = []
+  private accountStatus: AccountStatus = 'signed-out'
+  private accountError: string | undefined
   private fingerprint = ''
   private loading: Promise<void> | undefined
 
@@ -65,15 +70,14 @@ export class BambooAdapter extends LlmAdapter {
           headers: { authorization: `Bearer ${this.bridge.token}` }, signal: AbortSignal.timeout(20_000) })
       } catch { throw new LlmError('Bamboo account is unavailable. Open Settings → Bamboo account and refresh.', 'TRANSPORT') }
       if (!response.ok) throw new LlmError('Bamboo account could not be loaded. Open Settings → Bamboo account and refresh.', 'TRANSPORT')
-      const catalog = await response.json() as { generation: number; models: Model[] }
-      if (!Number.isSafeInteger(catalog.generation) || !Array.isArray(catalog.models) || catalog.models.some(model =>
+      const catalog = await response.json() as Catalog
+      if (!catalog || !Number.isSafeInteger(catalog.generation) || !accountStatuses.includes(catalog.status)
+        || (catalog.error !== undefined && typeof catalog.error !== 'string') || !Array.isArray(catalog.models) || catalog.models.some(model =>
         typeof model?.tools !== 'boolean' || !Number.isSafeInteger(model.contextWindow) || model.contextWindow < 1)) {
         throw new LlmError('Bamboo returned an invalid model catalog.', 'CONFIG')
       }
       const fingerprint = JSON.stringify(catalog)
       if (fingerprint !== this.fingerprint) {
-        this.models = catalog.models
-        this.fingerprint = fingerprint
         if (catalog.models.length === 0) this.adapter = undefined
         else {
           const profiles = resolveProfiles({ bamboo: {
@@ -95,6 +99,10 @@ export class BambooAdapter extends LlmAdapter {
               hostPath => this.ctx.get('fs')?.processPathFromHostPath(hostPath), ref),
           })
         }
+        this.models = catalog.models
+        this.accountStatus = catalog.status
+        this.accountError = catalog.error
+        this.fingerprint = fingerprint
       }
       const defaults = this.ctx.get('agentDefaultModel') as {
         currentSelection(): { provider: string; model: string }
@@ -121,8 +129,17 @@ export class BambooAdapter extends LlmAdapter {
   }
 
   private configured(model: string): PiAiAdapter {
-    if (!this.adapter || !this.models.some(item => item.id === model)) {
-      throw new LlmError('Sign in to Bamboo and choose an available model. Open Settings → Bamboo account to refresh.', 'MISSING_CREDENTIAL')
+    if (this.accountStatus !== 'signed-in') {
+      const message = this.accountStatus === 'signed-out' ? 'Sign in to Bamboo in Settings → Bamboo account.'
+        : 'Complete Bamboo sign-in in Settings → Bamboo account.'
+      throw new LlmError(message, 'MISSING_CREDENTIAL')
+    }
+    if (!this.adapter) {
+      if (this.accountError) throw new LlmError(this.accountError, 'TRANSPORT')
+      throw new LlmError('Bamboo has no available chat models. Check Settings → Bamboo account for the current status.', 'UNKNOWN_MODEL')
+    }
+    if (!this.models.some(item => item.id === model)) {
+      throw new LlmError('The selected Bamboo model is unavailable. Choose another model.', 'UNKNOWN_MODEL')
     }
     return this.adapter
   }

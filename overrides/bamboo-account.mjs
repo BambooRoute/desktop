@@ -371,7 +371,9 @@ export class BambooAccount {
 
   async catalog() {
     await this.refresh()
-    return { generation: this.generation, models: this.credential && this.value.status === 'signed-in' ? this.value.models : [] }
+    const { status, models, error } = this.value
+    return { generation: this.generation, status, models: status === 'signed-in' && this.credential ? models : [],
+      ...(status === 'signed-in' && error ? { error } : {}) }
   }
 
   async inference(body, generation, signal) {

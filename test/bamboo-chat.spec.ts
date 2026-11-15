@@ -14,7 +14,7 @@ vi.mock('@deepseek-ai/dsh-timeout', async (importOriginal) => {
 
 const chat = { id: 'chat', name: 'Bamboo Chat', provider: 'deepseek', contextWindow: 65_536, maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: {} }
 const agent = { ...chat, id: 'agent', name: 'Bamboo Agent', contextWindow: 1_000_000, maxOutput: 128_000, tools: true }
-const catalog = { body: JSON.stringify({ generation: 1, models: [chat, agent] }) }
+const catalog = { body: JSON.stringify({ generation: 1, status: 'signed-in', models: [chat, agent] }) }
 const messages = [createUserMessage({ content: [{ type: 'text', text: 'Say hello.' }], source: { kind: 'user' } })]
 const tool = { name: 'read', description: 'Read a local file', parameters: { type: 'object' as const, properties: {} } }
 
@@ -50,7 +50,7 @@ it('uses each model’s token limits and sends tools only to models that support
 
 it('refreshes token limits when the catalog changes within a signed-in session', async () => {
   const updated = { ...agent, contextWindow: 200_000, maxOutput: 64_000 }
-  const server = await mockServer([catalog, { body: JSON.stringify({ generation: 1, models: [chat, updated] }) }])
+  const server = await mockServer([catalog, { body: JSON.stringify({ generation: 1, status: 'signed-in', models: [chat, updated] }) }])
   const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
 
   await expect(adapter.resolveModel('bamboo', 'agent')).resolves.toMatchObject({
@@ -59,6 +59,30 @@ it('refreshes token limits when the catalog changes within a signed-in session',
   await expect(adapter.resolveModel('bamboo', 'agent')).resolves.toMatchObject({
     context: { contextWindow: 200_000 }, defaultMaxTokens: 64_000,
   })
+})
+
+it('distinguishes a signed-in account without a usable model from a signed-out account', async () => {
+  const server = await mockServer([
+    catalog,
+    { body: JSON.stringify({ generation: 1, status: 'signed-in', models: [] }) },
+    { body: JSON.stringify({ generation: 1, status: 'signed-in', models: [], error: 'Could not reach Bamboo.' }) },
+    { body: JSON.stringify({ generation: 2, status: 'signed-out', models: [] }) },
+  ])
+  const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
+
+  await expect(adapter.resolveModel('bamboo', 'removed')).rejects.toMatchObject({
+    code: 'UNKNOWN_MODEL', message: expect.stringContaining('selected Bamboo model is unavailable'),
+  })
+  await expect(adapter.prepareCall('bamboo', 'chat')).rejects.toMatchObject({
+    code: 'UNKNOWN_MODEL', message: expect.stringContaining('no available chat models'),
+  })
+  await expect(adapter.prepareCall('bamboo', 'chat')).rejects.toMatchObject({
+    code: 'TRANSPORT', message: 'Could not reach Bamboo.',
+  })
+  await expect(adapter.prepareCall('bamboo', 'chat')).rejects.toMatchObject({
+    code: 'MISSING_CREDENTIAL', message: expect.stringContaining('Sign in to Bamboo'),
+  })
+  expect(server.paths).toEqual(['/catalog', '/catalog', '/catalog', '/catalog'])
 })
 
 it('rejects plan mode and unsolicited tool calls for a model without tool support', async () => {

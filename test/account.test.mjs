@@ -339,4 +339,5 @@ test('a funded alternate wallet cannot enable calls and unpriced currencies rema
   f.session(null); f.catalog([])
   assert.equal((await f.account.refresh(true)).canCall, false)
   assert.match(f.account.state().notice, /available for CNY billing/)
+  assert.deepEqual(await f.account.catalog(), { generation: f.account.generation, status: 'signed-in', models: [] })
 })
