@@ -174,7 +174,8 @@ test('authenticated Host proxy preserves tool SSE and does not expose or accept 
 test('gateway failures are not retried and upstream diagnostics are not exposed', async t => {
   const f = await fixture(t)
   await f.account.signIn('USD'); await f.account.poll()
-  f.modelHandler((_req, res) => { res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'private-provider-credential' } })) })
+  const requestID = 'req_' + 'a'.repeat(32)
+  f.modelHandler((_req, res) => { res.writeHead(502, { 'content-type': 'application/json', 'x-request-id': requestID }); res.end(JSON.stringify({ error: { code: 'upstream_error', message: 'private-provider-credential' } })) })
   const bridge = await createBambooBridge(f.account)
   t.after(() => bridge.close())
   const response = await fetch(`${bridge.url}/session/${f.account.generation}/v1/chat/completions`, {
@@ -182,6 +183,9 @@ test('gateway failures are not retried and upstream diagnostics are not exposed'
   })
   const body = await response.text()
   assert.equal(response.status, 502)
+  assert.equal(response.headers.get('x-request-id'), requestID)
+  assert.equal(JSON.parse(body).error.request_id, requestID)
+  assert.ok(JSON.parse(body).error.message.includes(requestID))
   assert.ok(body.includes('Check request history'))
   assert.ok(!body.includes('private-provider-credential'))
   assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 1)

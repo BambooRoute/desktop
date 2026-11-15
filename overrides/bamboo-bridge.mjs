@@ -4,9 +4,15 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { BambooError, userError } from './bamboo-account.mjs'
 
-function reply(response, status, value) {
-  response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+function reply(response, status, value, requestID) {
+  response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store',
+    ...(requestID ? { 'x-request-id': requestID } : {}) })
   response.end(JSON.stringify(value))
+}
+
+function gatewayFailure(response, status, code, message, requestID) {
+  reply(response, status, { error: { code, message: requestID ? `${message} Request ID: ${requestID}.` : message,
+    ...(requestID ? { request_id: requestID } : {}) } }, requestID)
 }
 
 async function readBody(request) {
@@ -50,21 +56,24 @@ export async function createBambooBridge(account) {
       const body = await readBody(request)
       const { response: upstream, release, currency } = await account.inference(body, Number(match[1]), controller.signal)
       try {
+        const requestID = upstream.headers.get('x-request-id') || ''
+        const gatewayID = /^req_[a-f0-9]{32}$/.test(requestID) ? requestID : undefined
         if (!upstream.ok) {
           let value
           try { value = await upstream.json() } catch { value = null }
           const code = typeof value?.error?.code === 'string' ? value.error.code : 'gateway_error'
-          reply(response, upstream.status, { error: { code, message: userError(code, upstream.status, currency) } })
+          gatewayFailure(response, upstream.status, code, userError(code, upstream.status, currency), gatewayID)
           return
         }
         const contentType = upstream.headers.get('content-type') || ''
         if (body.stream === true && !contentType.includes('text/event-stream') ||
           body.stream !== true && !contentType.includes('application/json') || !upstream.body) {
-          await upstream.body?.cancel()
-          throw new BambooError('invalid_response', 'The model result could not be confirmed. Check request history before retrying.', 502)
+          await upstream.body?.cancel().catch(() => {})
+          gatewayFailure(response, 502, 'invalid_response', 'The model result could not be confirmed. Check request history before retrying.', gatewayID)
+          return
         }
         response.writeHead(upstream.status, { 'content-type': contentType, 'cache-control': 'no-store',
-          ...(upstream.headers.has('x-request-id') ? { 'x-request-id': upstream.headers.get('x-request-id') } : {}) })
+          ...(gatewayID ? { 'x-request-id': gatewayID } : {}) })
         await pipeline(Readable.fromWeb(upstream.body), response, { signal: controller.signal })
       } finally {
         release()

@@ -71,6 +71,7 @@ export class BambooAdapter extends LlmAdapter {
               input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: false })),
           } })
           this.adapter = new PiAiAdapter({ profiles: () => profiles, resolveApiKey: async () => this.bridge.token,
+            waitForUpstream: true,
             auth: { credentials: credentialStoreFrom(this.ctx), authContext: authContextFrom(this.ctx) },
             resolveAttachments: () => this.ctx.get('attachments'),
             resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments,

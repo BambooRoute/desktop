@@ -34,6 +34,8 @@ const gatewayMessages = {
   request_forbidden: 'This request is not allowed for your account or device. Check your account access and API key settings.',
   service_version: 'The Bamboo service does not support this desktop version yet. Update the service and try again.',
   rate_limited: 'Too many requests. Wait a moment before trying again.',
+  upstream_empty_response: 'The model returned no answer. Try another model or ask again.',
+  upstream_refused: 'The model declined this request. Revise the message and try again.',
   request_unconfirmed: 'Bamboo could not confirm the result. Check request history before retrying a model call.',
   request_failed: 'Bamboo could not complete the request. Please try again.',
 }

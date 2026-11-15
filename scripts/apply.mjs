@@ -73,6 +73,14 @@ export function applyOverrides(directory) {
     ["import { PiAiAdapter } from './adapter.ts'", "import { PiAiAdapter } from './adapter.ts'\nimport { applyBamboo } from './bamboo.ts'"],
     ['export function apply(ctx: Context, config: Config): void {', 'export function apply(ctx: Context, config: Config): void {\n  if (applyBamboo(ctx)) return'],
   ])
+  replace('packages/llm/llm-pi-ai/src/adapter.ts', [
+    ['export interface PiAiAdapterOptions {', 'export interface PiAiAdapterOptions {\n  waitForUpstream?: boolean'],
+    ["    using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')", "    using watchdog = this.config.waitForUpstream ? undefined : idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')\n    const streamSignal = watchdog?.signal ?? upstream"],
+    ['{ ...request, signal: watchdog.signal }', '{ ...request, signal: streamSignal }'],
+    ['        signal: watchdog.signal,', '        signal: streamSignal,'],
+    ['await watchdog.next(iterator)', 'await (watchdog?.next(iterator) ?? iterator.next())'],
+    ["if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)", "if (watchdog && timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)"],
+  ])
   replace('packages/api/session-controller/src/catalog.ts', [
     ['defaultSelection: ModelSelection = ctx.agentDefaultModel.currentSelection(),', 'defaultSelection?: ModelSelection,'],
     ['default: { ...defaultSelection },', 'default: { ...(defaultSelection ?? ctx.agentDefaultModel.currentSelection()) },'],
