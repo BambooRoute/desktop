@@ -1,8 +1,9 @@
 export class BambooError extends Error {
-  constructor(code, message, status = 400) {
+  constructor(code, message, status = 400, messageKey = code) {
     super(message)
     this.code = code
     this.status = status
+    this.messageKey = messageKey
   }
 }
 
@@ -15,30 +16,44 @@ export function serviceOrigin(value) {
   return url.origin
 }
 
+const gatewayMessages = {
+  invalid_api_key: 'Your desktop connection expired or was revoked. Sign in again.',
+  desktop_authorization_expired: 'The sign-in request expired. Start sign-in again.',
+  desktop_authorization_denied: 'The device connection was declined. You can start sign-in again.',
+  insufficient_balance: 'Your {currency} wallet has insufficient available funds. Open billing or choose a smaller output limit.',
+  invalid_currency: 'Choose USD or CNY as the billing currency.',
+  key_budget_exceeded: 'This device reached its spending limit. Update its budget on the API keys page.',
+  email_verification_required: 'Verify your email in your Bamboo account, then refresh.',
+  policy_acceptance_required: 'Review the current service policies in your Bamboo account, then refresh.',
+  policy_unavailable: 'Model calls are temporarily unavailable. Try again later.',
+  payment_risk_blocked: 'Your account has a payment issue. Open Billing or contact support.',
+  site_maintenance: 'Bamboo is undergoing maintenance. Please try again later.',
+  site_coming_soon: 'Bamboo is not open for model calls yet. Please try again later.',
+  model_unavailable: 'This model is no longer available. Refresh the model list and choose another model.',
+  unsupported_parameter: 'This model does not support part of the request. Choose another compatible model.',
+  request_forbidden: 'This request is not allowed for your account or device. Check your account access and API key settings.',
+  service_version: 'The Bamboo service does not support this desktop version yet. Update the service and try again.',
+  rate_limited: 'Too many requests. Wait a moment before trying again.',
+  request_unconfirmed: 'Bamboo could not confirm the result. Check request history before retrying a model call.',
+  request_failed: 'Bamboo could not complete the request. Please try again.',
+}
+
+function gatewayMessageKey(code, status) {
+  if (code !== 'request_failed' && Object.hasOwn(gatewayMessages, code)) return code
+  if (status === 401) return 'invalid_api_key'
+  if (status === 403) return 'request_forbidden'
+  if (status === 404) return 'service_version'
+  if (status === 429) return 'rate_limited'
+  if (status >= 500) return 'request_unconfirmed'
+  return 'request_failed'
+}
+
 export function userError(code, status, currency) {
-  const messages = {
-    invalid_api_key: 'Your desktop connection expired or was revoked. Sign in again.',
-    desktop_authorization_expired: 'The sign-in request expired. Start sign-in again.',
-    desktop_authorization_denied: 'The device connection was declined. You can start sign-in again.',
-    insufficient_balance: `Your ${currency || 'selected'} wallet has insufficient available funds. Open billing or choose a smaller output limit.`,
-    invalid_currency: 'Choose USD or CNY as the billing currency.',
-    key_budget_exceeded: 'This device reached its spending limit. Update its budget on the API keys page.',
-    email_verification_required: 'Verify your email in your Bamboo account, then refresh.',
-    policy_acceptance_required: 'Review the current service policies in your Bamboo account, then refresh.',
-    policy_unavailable: 'Model calls are unavailable while service policies are being updated. Try again later.',
-    payment_risk_blocked: 'Your account has a payment issue. Open Billing or contact support.',
-    site_maintenance: 'Bamboo is undergoing maintenance. Please try again later.',
-    site_coming_soon: 'Bamboo is not open for model calls yet. Please try again later.',
-    model_unavailable: 'This model is no longer available. Refresh the model list and choose another model.',
-    unsupported_parameter: 'This model does not support part of the request. Choose another compatible model.',
-  }
-  if (messages[code]) return messages[code]
-  if (status === 401) return messages.invalid_api_key
-  if (status === 403) return 'This request is not allowed for your account or device. Check your account access and API key settings.'
-  if (status === 404) return 'The Bamboo service does not support this desktop version yet. Update the service and try again.'
-  if (status === 429) return 'Too many requests. Wait a moment before trying again.'
-  if (status >= 500) return 'Bamboo could not confirm the result. Check request history before retrying a model call.'
-  return 'Bamboo could not complete the request. Please try again.'
+  return gatewayMessages[gatewayMessageKey(code, status)].replace('{currency}', currency || 'selected')
+}
+
+function accountError(reason, errorKey, error) {
+  return reason instanceof BambooError ? { error: reason.message, errorKey: reason.messageKey } : { error, errorKey }
 }
 
 const validCurrency = value => value === 'USD' || value === 'CNY'
@@ -54,15 +69,15 @@ export function parseModels(value, currency) {
       throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
     }
     seen.add(model.id)
-    if (model.capabilities.chat !== true || model.capabilities.tools !== true) return []
+    if (model.capabilities.chat !== true) return []
     const prices = {}
     for (const field of ['input', 'output', 'cache_read', 'cache_write']) {
       const price = model.sell?.[field]
-      if (price !== undefined && !validAmount(price)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model price.', 502)
+      if (price !== undefined && !validAmount(price)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model price.', 502, 'invalid_price')
       if (price !== undefined) prices[field] = price
     }
     return [{ id: model.id, name: model.name, provider: model.provider, maxOutput: model.max_output_tokens,
-      vision: model.capabilities.vision === true, currency, prices }]
+      vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency, prices }]
   })
 }
 
@@ -82,13 +97,11 @@ function parseAccount(value, currency) {
     wallets, wallet: wallets.find(wallet => wallet.currency === currency), topupCurrencies: [...new Set(value.topup_currencies)] }
 }
 
-export function accountBlocker(account) {
-  if (!account) return 'Sign in to Bamboo to use models.'
-  if (!account.modelAccess) return 'Model access is not enabled for your account. Contact Bamboo support.'
-  if (!account.policyReady) return 'Model calls are unavailable while service policies are being updated.'
-  if (!account.policyAccepted) return 'Review the current service policies in your Bamboo account, then refresh.'
-  if (!/[1-9]/.test(account.wallet.available)) return `Your ${account.currency} wallet has no available funds. Open billing to check funding options.`
-  return ''
+function accountBlocker(account) {
+  if (!account.modelAccess) return { noticeKey: 'model_access_disabled', notice: 'Model access is not enabled for your account. Contact Bamboo support.' }
+  if (!account.policyReady) return { noticeKey: 'policy_unavailable', notice: gatewayMessages.policy_unavailable }
+  if (!account.policyAccepted) return { noticeKey: 'policy_acceptance_required', notice: 'Review the current service policies in your Bamboo account, then refresh.' }
+  if (!/[1-9]/.test(account.wallet.available)) return { noticeKey: 'wallet_empty', notice: `Your ${account.currency} wallet has no available funds. Open billing to check funding options.` }
 }
 
 export class BambooAccount {
@@ -132,10 +145,10 @@ export class BambooAccount {
     }
     let value
     try { value = await response.json() }
-    catch { throw new BambooError('invalid_response', userError('', response.status), response.ok ? 502 : response.status) }
+    catch { throw new BambooError('invalid_response', userError('', response.status), response.ok ? 502 : response.status, gatewayMessageKey('', response.status)) }
     if (!response.ok) {
       const code = typeof value?.error?.code === 'string' ? value.error.code : 'request_failed'
-      throw new BambooError(code, userError(code, response.status, this.credential?.currency), response.status)
+      throw new BambooError(code, userError(code, response.status, this.credential?.currency), response.status, gatewayMessageKey(code, response.status))
     }
     return { value, status: response.status }
   }
@@ -149,7 +162,8 @@ export class BambooAccount {
         await this.refresh(true)
       } else if (credential) await this.storage.clear()
     } catch {
-      this.publish({ status: 'signed-out', models: [], canCall: false, error: 'Your saved connection could not be opened. Sign in again to reconnect.' })
+      this.publish({ status: 'signed-out', models: [], canCall: false,
+        errorKey: 'saved_connection_unavailable', error: 'Your saved connection could not be opened. Sign in again to reconnect.' })
     }
     return this.state()
   }
@@ -167,7 +181,7 @@ export class BambooAccount {
       if (value.currency !== currency || typeof value.device_code !== 'string' || value.device_code.length < 32 || value.device_code.length > 128 ||
         !/^[A-Z2-7]{4}-[A-Z2-7]{4}$/.test(value.user_code) || value.verification_uri !== this.site + '/desktop/authorize' ||
         !Number.isFinite(value.expires_in) || value.expires_in < 1 || value.expires_in > 900) {
-        throw new BambooError('invalid_response', 'Bamboo returned an invalid sign-in request.', 502)
+        throw new BambooError('invalid_response', 'Bamboo returned an invalid sign-in request.', 502, 'invalid_sign_in')
       }
       if (generation !== this.generation) {
         await this.json('/api/desktop/cancel', { method: 'POST', body: { device_code: value.device_code } }).catch(() => {})
@@ -182,9 +196,9 @@ export class BambooAccount {
       await this.openExternal(url.href)
     } catch (error) {
       if (generation === this.generation) {
-        const message = error instanceof BambooError ? error.message : 'The sign-in page could not open. Use Open browser to try again.'
-        if (this.attempt) this.publish({ ...this.value, error: message })
-        else await this.resume(message)
+        const failure = accountError(error, 'browser_open_failed', 'The sign-in page could not open. Use Open browser to try again.')
+        if (this.attempt) this.publish({ ...this.value, ...failure })
+        else await this.resume(failure)
       }
     }
     return this.state()
@@ -205,7 +219,7 @@ export class BambooAccount {
     if (!attempt) return
     if (attempt.expiresAt <= Date.now()) {
       this.attempt = null
-      await this.resume('The sign-in request expired. Start sign-in again.')
+      await this.resume({ errorKey: 'desktop_authorization_expired', error: 'The sign-in request expired. Start sign-in again.' })
       return
     }
     try {
@@ -214,7 +228,7 @@ export class BambooAccount {
       if (value.currency !== attempt.currency || typeof value.token !== 'string' || !/^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) ||
         typeof value.key_id !== 'string' || !Number.isFinite(Date.parse(value.expires_at)) || Date.parse(value.expires_at) <= Date.now()) {
         if (typeof value.token === 'string' && /^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) && value.token !== this.credential?.token) await this.json('/api/desktop/session', { token: value.token, method: 'DELETE' }).catch(() => {})
-        throw new BambooError('invalid_response', 'The sign-in result could not be confirmed. Start sign-in again.', 502)
+        throw new BambooError('invalid_response', 'The sign-in result could not be confirmed. Start sign-in again.', 502, 'sign_in_unconfirmed')
       }
       if (this.attempt !== attempt || this.generation !== attempt.generation) {
         await this.json('/api/desktop/session', { token: value.token, method: 'DELETE' }).catch(() => {})
@@ -254,24 +268,24 @@ export class BambooAccount {
       if (this.credential !== credential || this.generation !== attempt.generation) return
       this.publish({ status: 'signed-in', models: [], canCall: false })
       await this.refresh(true)
-      if (revokeError) this.publish({ ...this.value, error: revokeError })
+      if (revokeError) this.publish({ ...this.value, errorKey: 'previous_device_revoke_failed', error: revokeError })
     } catch (error) {
       if (this.attempt !== attempt) return
       if (error instanceof BambooError && (error.code === 'network' || error.status === 429 || error.status >= 500 && error.code !== 'invalid_response')) {
-        this.publish({ ...this.value, error: error.message })
+        this.publish({ ...this.value, errorKey: error.messageKey, error: error.message })
         this.schedulePoll()
       } else {
         this.attempt = null
-        await this.resume(error instanceof BambooError ? error.message : 'Sign-in could not finish. Please try again.')
+        await this.resume(accountError(error, 'sign_in_failed', 'Sign-in could not finish. Please try again.'))
       }
     }
   }
 
-  async resume(error = '') {
+  async resume(failure) {
     this.publish({ status: this.credential ? 'signed-in' : 'signed-out', models: [], canCall: false })
     this.lastRefresh = 0
     if (this.credential) await this.refresh(true)
-    if (error) this.publish({ ...this.value, error })
+    if (failure) this.publish({ ...this.value, ...failure })
     return this.state()
   }
 
@@ -302,13 +316,14 @@ export class BambooAccount {
         const account = parseAccount(session.value, credential.currency)
         const models = parseModels(catalog.value, credential.currency)
         this.lastRefresh = Date.now()
-        return this.publish({ status: 'signed-in', account, models, canCall: !accountBlocker(account) && models.length > 0,
-          notice: accountBlocker(account) || (models.length === 0 ? `No models supporting chat and tools are available for ${credential.currency} billing. Choose another billing currency or check again later.` : '') })
+        const blocker = accountBlocker(account)
+        const notice = blocker ?? (models.length === 0 ? { noticeKey: 'no_models', notice: `No chat models are available for ${credential.currency} billing. Choose another billing currency or check again later.` } : undefined)
+        return this.publish({ status: 'signed-in', account, models, canCall: !blocker && models.length > 0, notice: '', ...notice })
       } catch (error) {
         if (generation !== this.generation || credential !== this.credential) return this.state()
         if (error instanceof BambooError && error.status === 401) return this.expire()
         return this.publish({ ...this.value, status: 'signed-in', canCall: false,
-          error: error instanceof BambooError ? error.message : 'Account details could not be refreshed. Try again.' })
+          ...accountError(error, 'refresh_failed', 'Account details could not be refreshed. Try again.') })
       } finally { if (this.refreshing === refresh) this.refreshing = null }
     })()
     this.refreshing = refresh
@@ -320,7 +335,8 @@ export class BambooAccount {
     this.credential = null
     for (const controller of this.aborters) controller.abort()
     await this.storage.clear()
-    return this.publish({ status: 'signed-out', models: [], canCall: false, error: 'Your desktop connection expired or was revoked. Sign in again.' })
+    return this.publish({ status: 'signed-out', models: [], canCall: false,
+      errorKey: 'invalid_api_key', error: 'Your desktop connection expired or was revoked. Sign in again.' })
   }
 
   async signOut() {
@@ -333,7 +349,8 @@ export class BambooAccount {
       try { await this.json('/api/desktop/session', { token: credential.token, method: 'DELETE' }) }
       catch (error) {
         if (!(error instanceof BambooError && error.status === 401)) {
-          return this.publish({ ...this.value, error: 'Signed out locally. Remote revocation could not be confirmed. Revoke this device on the API keys page.' })
+          return this.publish({ ...this.value, errorKey: 'remote_device_revoke_failed',
+            error: 'Signed out locally. Remote revocation could not be confirmed. Revoke this device on the API keys page.' })
         }
       }
     }

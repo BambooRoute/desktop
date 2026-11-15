@@ -7,9 +7,27 @@ import { PiAiAdapter } from './adapter.ts'
 import { resolveProfiles } from './config.ts'
 import { credentialStoreFrom, authContextFrom } from './auth.ts'
 
-interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
+interface Model { id: string; name: string; provider: string; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
+
+async function* chatStream(call: PreparedAdapterCall, options: GenerateOptions): AsyncIterable<StreamChunk> {
+  if (options.tools?.some(tool => tool.name === 'exit_plan_mode')) {
+    throw new LlmError('Plan mode requires a model with tool calling. Switch to Standard mode to chat.', 'UNSUPPORTED_OPTION')
+  }
+  if (options.messages.some(message => message.role === 'tool' || message.content.some(block => block.type === 'tool-call'))) {
+    throw new LlmError('This chat contains tool activity. Start a new chat or choose a model with tool calling.', 'UNSUPPORTED_CONTENT')
+  }
+  const { tools, toolHistory, system, ...conversation } = options
+  const chatInstructions = 'Answer conversationally using the supplied messages and attachments. Workspace tools are disabled for this model.'
+  for await (const chunk of call.stream({ ...conversation, system: system ? `${system}\n\n${chatInstructions}` : chatInstructions })) {
+    if (chunk.type === 'tool-call-delta' || chunk.type === 'block-start' && chunk.blockType === 'tool-call'
+      || chunk.type === 'block-end' && chunk.block.type === 'tool-call' || chunk.type === 'finish' && chunk.reason.kind === 'tool-calls') {
+      throw new LlmError('The model returned an unsupported tool call.', 'UNSUPPORTED_CONTENT')
+    }
+    yield chunk
+  }
+}
 
 export class BambooAdapter extends LlmAdapter {
   private adapter: PiAiAdapter | undefined
@@ -33,7 +51,9 @@ export class BambooAdapter extends LlmAdapter {
       } catch { throw new LlmError('Bamboo account is unavailable. Open Settings → Bamboo account and refresh.', 'TRANSPORT') }
       if (!response.ok) throw new LlmError('Bamboo account could not be loaded. Open Settings → Bamboo account and refresh.', 'TRANSPORT')
       const catalog = await response.json() as { generation: number; models: Model[] }
-      if (!Number.isSafeInteger(catalog.generation) || !Array.isArray(catalog.models)) throw new LlmError('Bamboo returned an invalid model catalog.', 'CONFIG')
+      if (!Number.isSafeInteger(catalog.generation) || !Array.isArray(catalog.models) || catalog.models.some(model => typeof model?.tools !== 'boolean')) {
+        throw new LlmError('Bamboo returned an invalid model catalog.', 'CONFIG')
+      }
       const fingerprint = JSON.stringify(catalog)
       if (fingerprint !== this.fingerprint) {
         this.models = catalog.models
@@ -62,7 +82,7 @@ export class BambooAdapter extends LlmAdapter {
         currentSelection(): { provider: string; model: string }
         saveSelection(selection: { provider: string; model: string }): Promise<void>
       } | undefined
-      const first = this.models[0]
+      const first = this.models.find(model => model.tools) ?? this.models[0]
       if (defaults && first) {
         const current = defaults.currentSelection()
         if (current.provider !== 'bamboo' || !this.models.some(model => model.id === current.model)) {
@@ -96,7 +116,10 @@ export class BambooAdapter extends LlmAdapter {
 
   override async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
     await this.load(signal)
-    return this.configured(model).prepareCall(provider, model, signal)
+    const adapter = this.configured(model)
+    const supportsTools = this.models.some(item => item.id === model && item.tools)
+    const call = await adapter.prepareCall(provider, model, signal)
+    return supportsTools ? call : { model: call.model, stream: options => chatStream(call, options) }
   }
 
   override imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef) {
@@ -104,8 +127,8 @@ export class BambooAdapter extends LlmAdapter {
   }
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    await this.load(options.signal)
-    yield* this.configured(options.model).stream(options)
+    const call = await this.prepareCall(options.provider, options.model, options.signal)
+    yield* call.stream(options)
   }
 }
 

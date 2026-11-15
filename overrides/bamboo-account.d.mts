@@ -7,7 +7,12 @@ export interface BambooStorage {
   write(credential: BambooCredential): Promise<void>
   clear(): Promise<void>
 }
-export class BambooError extends Error { code: string; status: number; constructor(code: string, message: string, status?: number) }
+export class BambooError extends Error {
+  code: string
+  status: number
+  messageKey: string
+  constructor(code: string, message: string, status?: number, messageKey?: string)
+}
 export class BambooAccount {
   constructor(options: { site: string; gateway: string; storage: BambooStorage; openExternal(url: string): Promise<void>; fetch?: typeof fetch; pollInterval?: number })
   state(): BambooState

@@ -4,10 +4,6 @@
     "config": { "openBrowser": false, "printUrl": false, "surfaceContext": true }
   },
   {
-    "id": "locale",
-    "config": { "preference": "en" }
-  },
-  {
     "id": "product-analytics",
     "config": { "enabled": false }
   },

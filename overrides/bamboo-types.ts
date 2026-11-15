@@ -7,6 +7,7 @@ export interface BambooModel {
   provider: string
   maxOutput: number
   vision: boolean
+  tools: boolean
   currency: Currency
   prices: Record<string, string>
 }
@@ -19,7 +20,9 @@ export interface BambooState {
   activeCalls: number
   pendingCurrency?: Currency
   error?: string
+  errorKey?: string
   notice?: string
+  noticeKey?: string
   models: BambooModel[]
   account?: {
     email: string

@@ -52,7 +52,7 @@ const server = createServer((request, response) => {
   }
   catalogRequests++
   response.end(JSON.stringify({ generation: 1, models: [{ id: 'packaging-smoke', name: 'Packaging smoke', provider: 'test',
-    maxOutput: 1024, vision: false, currency: 'USD', prices: { input: '0', output: '0' } }] }))
+    maxOutput: 1024, vision: false, tools: false, currency: 'USD', prices: { input: '0', output: '0' } }] }))
 })
 await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
 const address = server.address()
@@ -92,9 +92,9 @@ try {
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   const response = await fetch(new URL('/bamboo-package-smoke', ready.url), { headers: { cookie }, signal: AbortSignal.timeout(30_000) })
   assert.equal(response.status, 200, await response.clone().text())
-  const result = await response.json() as { providers: { id: string }[]; models: { id: string }[] }
+  const result = await response.json() as { providers: { id: string }[]; models: { id: string; name: string }[] }
   assert.deepEqual(result.providers.map(provider => provider.id), ['bamboo'])
-  assert.deepEqual(result.models.map(model => model.id), ['packaging-smoke'])
+  assert.deepEqual(result.models.map(model => ({ id: model.id, name: model.name })), [{ id: 'packaging-smoke', name: 'Packaging smoke' }])
   assert.ok(catalogRequests > 0)
   assert.equal(inferenceRequests, 0)
   writeFileSync(join(output, 'verification.json'), JSON.stringify({

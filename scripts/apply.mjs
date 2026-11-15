@@ -48,7 +48,9 @@ export function applyOverrides(directory) {
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
   copy('host-bridge.ts', 'apps/desktop-host/src/bamboo-bridge.ts')
   copy('llm-bamboo.ts', 'packages/llm/llm-pi-ai/src/bamboo.ts')
+  output.set('packages/llm/llm-pi-ai/tests/bamboo-chat.spec.ts', readFileSync(join(root, 'test/bamboo-chat.spec.ts')))
   copy('account-client.ts', 'packages/client/ui-settings-account/src/client/index.ts')
+  copy('account-locales.ts', 'packages/client/ui-settings-account/src/client/bamboo-account-locales.ts')
   copy('AccountPanel.tsx', 'packages/client/ui-settings-account/src/client/BambooAccount.tsx')
   copy('AccountPanel.module.css', 'packages/client/ui-settings-account/src/client/BambooAccount.module.css')
   copy('bamboo-types.ts', 'packages/client/ui-settings-account/src/client/bamboo-types.ts')
@@ -103,6 +105,8 @@ export function applyOverrides(directory) {
     ['let focusPrimaryWindow = (): void => {}', "app.setName(process.env.BAMBOO_PRODUCT_NAME ?? 'Bamboo Desktop')\napp.setAppUserModelId(process.env.BAMBOO_APP_ID ?? 'com.bambooroute.desktop')\n\nlet focusPrimaryWindow = (): void => {}"],
     ["app.setAppLogsPath()", "app.setAppLogsPath(join(app.getPath('userData'), 'logs'))"],
     ["readDesktopLocaleCache(app.getPath('userData'))", "readDesktopLocaleCache(app.getPath('userData')) ?? 'en'"],
+    ['  const systemLanguages = app.getPreferredSystemLanguages()', "  const systemLanguages = ['en']"],
+    ['systemLanguages', 'defaultDesktopLanguages'],
     ["applicationName: 'DeepSeek Harness'", "applicationName: 'Bamboo Desktop'"],
     ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient(process.env.BAMBOO_PROTOCOL ?? 'bamboo')"],
     ["url === 'dsh://open' || url === 'dsh://open/'", "url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open` || url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open/`"],
