@@ -40,6 +40,7 @@ try {
   await account.signIn('USD')
   await account.poll()
   assert.equal(account.state().account.currency, 'USD')
+  assert.equal(account.state().account.emailVerified, false)
   assert.equal(account.state().account.wallet.available, '25')
   assert.equal(account.state().canCall, true)
   const previous = saved

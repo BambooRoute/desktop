@@ -84,7 +84,6 @@ function parseAccount(value, currency) {
 
 export function accountBlocker(account) {
   if (!account) return 'Sign in to Bamboo to use models.'
-  if (!account.emailVerified) return 'Verify your email in your Bamboo account, then refresh.'
   if (!account.modelAccess) return 'Model access is not enabled for your account. Contact Bamboo support.'
   if (!account.policyReady) return 'Model calls are unavailable while service policies are being updated.'
   if (!account.policyAccepted) return 'Review the current service policies in your Bamboo account, then refresh.'
