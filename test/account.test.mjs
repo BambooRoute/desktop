@@ -12,8 +12,8 @@ const session = { email: 'member@example.test', email_verified: true, model_acce
   policy: { ready: true, accepted: true }, currency: 'USD', topup_currencies: ['USD'], wallets: [
     { currency: 'USD', balance: '10', reserved: '0.3', available: '9.7' },
     { currency: 'CNY', balance: '70', reserved: '1.1', available: '68.9' }]  }
-const model = { currency: 'USD', id: 'bamboo-test', name: 'Bamboo Test', provider: 'deepseek', max_output_tokens: 800,
-  context_window_tokens: 65_536, capabilities: { chat: true, tools: true, vision: false }, sell: { input: '0.12', output: '0.3', cache_read: '0.01' } }
+const model = { currency: 'USD', id: 'bamboo-test', name: 'Bamboo Test', provider: 'openai', max_output_tokens: 800,
+  context_window_tokens: 65_536, capabilities: { vendor: 'deepseek', chat: true, tools: true, vision: false }, sell: { input: '0.12', output: '0.3', cache_read: '0.01' } }
 const sse = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"Read","arguments":"{}"}}]},"finish_reason":null}]}\n\n'
   + 'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n'
 
@@ -104,6 +104,8 @@ test('sign-in opens only a public verification code, stores a device grant and r
   assert.equal(f.account.state().status, 'signed-in')
   assert.equal(f.account.state().canCall, true)
   assert.deepEqual(f.account.state().models.map(value => value.id), ['bamboo-test'])
+  assert.equal(f.account.state().models[0].vendor, 'deepseek')
+  assert.equal(f.account.state().models[0].provider, 'openai')
   assert.ok(!JSON.stringify(f.account.state()).includes(token))
   const restored = new BambooAccount({ site: f.origin, gateway: f.origin, storage: f.storage, openExternal: async () => {} })
   t.after(() => restored.close())
@@ -213,7 +215,9 @@ test('service origins and catalog capabilities are validated before use', () => 
   for (const origin of ['http://remote.example', 'https://user:secret@bambooroute.com', 'https://bambooroute.com/other', 'file:///tmp']) assert.throws(() => serviceOrigin(origin))
   assert.equal(serviceOrigin('https://bambooroute.com/'), 'https://bambooroute.com')
   assert.throws(() => parseModels([{ ...model, max_output_tokens: -1 }], 'USD'))
-  assert.equal(parseModels([{ ...model, capabilities: { chat: true, tools: false } }], 'USD')[0].tools, false)
+  const [chat] = parseModels([{ ...model, capabilities: { chat: true, tools: false } }], 'USD')
+  assert.equal(chat.tools, false)
+  assert.equal(chat.vendor, undefined)
   assert.deepEqual(parseModels([{ ...model, capabilities: { chat: false, images: true } }], 'USD'), [])
 })
 

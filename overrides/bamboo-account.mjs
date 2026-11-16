@@ -80,7 +80,8 @@ export function parseModels(value, currency) {
       if (price !== undefined && !validAmount(price)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model price.', 502, 'invalid_price')
       if (price !== undefined) prices[field] = price
     }
-    return [{ id: model.id, name: model.name, provider: model.provider, contextWindow, maxOutput: model.max_output_tokens,
+    const vendor = typeof model.capabilities.vendor === 'string' ? model.capabilities.vendor.trim() || undefined : undefined
+    return [{ id: model.id, name: model.name, provider: model.provider, vendor, contextWindow, maxOutput: model.max_output_tokens,
       vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency, prices }]
   })
 }

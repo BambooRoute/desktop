@@ -45,7 +45,8 @@ function fixture(currency: 'USD' | 'CNY' = 'USD', activeCalls = 0) {
   const state: BambooState = { status: 'signed-in', canCall: true, activeCalls,
     account: { email: 'member@example.test', emailVerified: true, modelAccess: true, policyReady: true, policyAccepted: true,
       currency, wallets, wallet: wallets.find(wallet => wallet.currency === currency)!, topupCurrencies: ['USD'] },
-    models: [{ id: 'model', name: 'Model', provider: 'deepseek', contextWindow: 65_536, maxOutput: 800, vision: false, tools: false, currency, prices: { input: '0.123456789', output: '1.23' } }],
+    models: [{ id: 'DeepSeek-V4.1-Flash-1017', name: 'DeepSeek V4.1 Flash (1017)', provider: 'openai', vendor: 'deepseek',
+      contextWindow: 1_048_576, maxOutput: 393_216, vision: false, tools: false, currency, prices: { input: '0.123456789', output: '1.23' } }],
   }
   let receive: (value: BambooState) => void = () => {}
   const api: BambooApi = { state: vi.fn(async () => state), signIn: vi.fn(async () => state), cancel: vi.fn(async () => state), refresh: vi.fn(async () => state),
@@ -62,7 +63,9 @@ it('shows separate wallets and exact prices in the active currency without offer
   await screen.findByText('CNY 68.9')
   expect(within(screen.getByRole('region', { name: 'USD wallet' })).getByText('USD 9.7')).toBeTruthy()
   expect(screen.getByText('CNY 0.123456789')).toBeTruthy()
-  expect(screen.getByText('Model', { exact: true }).parentElement?.textContent).toBe('Model')
+  const modelName = 'DeepSeek V4.1 Flash (1017)'
+  expect(screen.getByText(modelName, { exact: true }).parentElement?.textContent).toBe(modelName)
+  expect(screen.getByText('DeepSeek · DeepSeek-V4.1-Flash-1017')).toBeTruthy()
   expect(screen.queryByText(/Online CNY top-ups/)).toBeNull()
   expect(screen.queryByRole('button', { name: /Add .* funds/ })).toBeNull()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'View CNY billing' })) })

@@ -5,6 +5,19 @@ import { isBambooAccountKey, type BambooAccountKey, type bambooAccountNamespace 
 import type { BambooApi, BambooState, Currency } from './bamboo-types.ts'
 import css from './BambooAccount.module.css'
 
+const vendorNames = new Map([
+  ['anthropic', 'Anthropic'],
+  ['deepseek', 'DeepSeek'],
+  ['doubao', 'ByteDance'],
+  ['gemini', 'Google'],
+  ['minimax', 'MiniMax'],
+  ['moonshot', 'Moonshot AI'],
+  ['openai', 'OpenAI'],
+  ['qwen', 'Alibaba'],
+  ['tencent', 'Tencent'],
+  ['zhipu', 'Zhipu AI'],
+])
+
 export function BambooAccountPanel({ t }: PropsLocale<typeof bambooAccountNamespace>) {
   const api = (window as unknown as { bambooAccount?: BambooApi }).bambooAccount
   const [state, setState] = useState<BambooState | null>(null)
@@ -95,7 +108,7 @@ export function BambooAccountPanel({ t }: PropsLocale<typeof bambooAccountNamesp
           <span>{model.name}</span>
           {model.tools && <span className={css.secondary}>{t(model.vision ? 'vision_tools' : 'text_tools')}</span>}
         </div>
-        <span className={css.secondary}>{model.provider} · {model.id}</span>
+        <span className={css.secondary}>{model.vendor && `${vendorNames.get(model.vendor) ?? model.vendor} · `}{model.id}</span>
         <dl className={css.prices}>
           {(['input', 'output', 'cache_read', 'cache_write'] as const).map(field => model.prices[field] === undefined ? null :
             <div key={field}><dt>{t(field)}</dt><dd>{model.currency} {model.prices[field]}</dd></div>)}
