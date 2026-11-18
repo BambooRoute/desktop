@@ -7,7 +7,6 @@ import { developmentRuntimeDirectory, resolveDesktopBuildTarget } from './deskto
 import { prepareDevelopmentProject } from './development-project.ts'
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 import { prepareApp } from './bamboo-app.mjs'
-import sharp from 'sharp'
 
 const appRoot = resolve(import.meta.dirname, '..')
 const repository = resolve(appRoot, '../..')
@@ -46,8 +45,8 @@ async function main() {
   })
   console.log('Preparing the pinned desktop runtime...')
   await preparePrimaryRuntime()
-  const icon = join(development, 'bamboo-icon.png')
-  await sharp(join(appRoot, 'renderer/assets/welcome-brand.svg')).resize(1024, 1024).png().toFile(icon)
+  execFileSync(process.execPath, [join(import.meta.dirname, 'bamboo-package-assets.mjs')])
+  const icon = join(appRoot, 'resources/bamboo/icon.png')
   const environment = {
     DSH_HOME: home,
     DSH_DESKTOP_USER_DATA_DIR: userData,

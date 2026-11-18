@@ -16,12 +16,14 @@ export function serviceOrigin(value) {
   return url.origin
 }
 
+const billingCurrency = 'CNY'
+
 const gatewayMessages = {
   invalid_api_key: 'Your desktop connection expired or was revoked. Sign in again.',
   desktop_authorization_expired: 'The sign-in request expired. Start sign-in again.',
   desktop_authorization_denied: 'The device connection was declined. You can start sign-in again.',
-  insufficient_balance: 'Your {currency} wallet has insufficient available funds. Open billing or choose a smaller output limit.',
-  invalid_currency: 'Choose USD or CNY as the billing currency.',
+  insufficient_balance: 'Your CNY wallet has insufficient available funds. Open billing or choose a smaller output limit.',
+  invalid_currency: 'Bamboo could not use CNY billing. Check your account and try again.',
   key_budget_exceeded: 'This device reached its spending limit. Update its budget on the API keys page.',
   email_verification_required: 'Verify your email in your Bamboo account, then refresh.',
   policy_acceptance_required: 'Review the current service policies in your Bamboo account, then refresh.',
@@ -50,8 +52,8 @@ function gatewayMessageKey(code, status) {
   return 'request_failed'
 }
 
-export function userError(code, status, currency) {
-  return gatewayMessages[gatewayMessageKey(code, status)].replace('{currency}', currency || 'selected')
+export function userError(code, status) {
+  return gatewayMessages[gatewayMessageKey(code, status)]
 }
 
 function accountError(reason, errorKey, error) {
@@ -61,11 +63,11 @@ function accountError(reason, errorKey, error) {
 const validCurrency = value => value === 'USD' || value === 'CNY'
 const validAmount = value => typeof value === 'string' && /^(0|[1-9]\d*)(\.\d{1,9})?$/.test(value)
 
-export function parseModels(value, currency) {
-  if (!validCurrency(currency) || !Array.isArray(value)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
+export function parseModels(value) {
+  if (!Array.isArray(value)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
   const seen = new Set()
   return value.flatMap(model => {
-    if (!model || model.currency !== currency || typeof model.id !== 'string' || !model.id || model.id.length > 200 || seen.has(model.id) ||
+    if (!model || model.currency !== billingCurrency || typeof model.id !== 'string' || !model.id || model.id.length > 200 || seen.has(model.id) ||
       typeof model.name !== 'string' || typeof model.provider !== 'string' || !model.capabilities ||
       !Number.isSafeInteger(model.max_output_tokens) || model.max_output_tokens < 1) {
       throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
@@ -82,24 +84,24 @@ export function parseModels(value, currency) {
     }
     const vendor = typeof model.capabilities.vendor === 'string' ? model.capabilities.vendor.trim() || undefined : undefined
     return [{ id: model.id, name: model.name, provider: model.provider, vendor, contextWindow, maxOutput: model.max_output_tokens,
-      vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency, prices }]
+      vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency: billingCurrency, prices }]
   })
 }
 
-function parseAccount(value, currency) {
-  if (!value || !validCurrency(currency) || value.currency !== currency || typeof value.email !== 'string' ||
+function parseAccount(value) {
+  const wallets = Array.isArray(value?.wallets) ? value.wallets.filter(wallet => wallet?.currency === billingCurrency) : []
+  const [wallet] = wallets
+  if (!value || value.currency !== billingCurrency || typeof value.email !== 'string' ||
     typeof value.email_verified !== 'boolean' || typeof value.model_access !== 'boolean' ||
     typeof value.policy?.ready !== 'boolean' || typeof value.policy?.accepted !== 'boolean' ||
-    !Array.isArray(value.wallets) || value.wallets.length !== 2 ||
-    new Set(value.wallets.map(wallet => wallet?.currency)).size !== 2 ||
-    !value.wallets.every(wallet => validCurrency(wallet?.currency) && ['balance', 'reserved', 'available'].every(key => validAmount(wallet[key]))) ||
+    wallets.length !== 1 || !['balance', 'reserved', 'available'].every(key => validAmount(wallet[key])) ||
     !Array.isArray(value.topup_currencies) || !value.topup_currencies.every(validCurrency)) {
     throw new BambooError('invalid_account', 'Bamboo returned invalid account information. Refresh before making another call.', 502)
   }
-  const wallets = value.wallets.map(wallet => ({ currency: wallet.currency, balance: wallet.balance, reserved: wallet.reserved, available: wallet.available }))
   return { email: value.email, emailVerified: value.email_verified, modelAccess: value.model_access,
-    policyReady: value.policy.ready, policyAccepted: value.policy.accepted, currency,
-    wallets, wallet: wallets.find(wallet => wallet.currency === currency), topupCurrencies: [...new Set(value.topup_currencies)] }
+    policyReady: value.policy.ready, policyAccepted: value.policy.accepted, currency: billingCurrency,
+    wallet: { currency: billingCurrency, balance: wallet.balance, reserved: wallet.reserved, available: wallet.available },
+    canTopUp: value.topup_currencies.includes(billingCurrency) }
 }
 
 function accountBlocker(account) {
@@ -120,7 +122,7 @@ export class BambooAccount {
     this.generation = 0
     this.listeners = new Set()
     this.aborters = new Set()
-    this.credential = null
+    this.savedCredential = null
     this.attempt = null
     this.timer = null
     this.refreshing = null
@@ -129,7 +131,11 @@ export class BambooAccount {
     this.value = { status: 'signed-out', models: [], canCall: false }
   }
 
-  state() { return structuredClone({ ...this.value, activeCalls: this.aborters.size }) }
+  get credential() {
+    return this.savedCredential?.currency === billingCurrency ? this.savedCredential : null
+  }
+
+  state() { return structuredClone(this.value) }
   subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   publish(value) {
     this.value = value
@@ -153,7 +159,7 @@ export class BambooAccount {
     catch { throw new BambooError('invalid_response', userError('', response.status), response.ok ? 502 : response.status, gatewayMessageKey('', response.status)) }
     if (!response.ok) {
       const code = typeof value?.error?.code === 'string' ? value.error.code : 'request_failed'
-      throw new BambooError(code, userError(code, response.status, this.credential?.currency), response.status, gatewayMessageKey(code, response.status))
+      throw new BambooError(code, userError(code, response.status), response.status, gatewayMessageKey(code, response.status))
     }
     return { value, status: response.status }
   }
@@ -163,8 +169,9 @@ export class BambooAccount {
       const credential = await this.storage.read()
       if (validCurrency(credential?.currency) && credential?.site === this.site && credential.gateway === this.gateway && typeof credential.token === 'string' &&
         /^bbr-[A-Za-z0-9_-]{32,128}$/.test(credential.token) && Date.parse(credential.expiresAt) > Date.now()) {
-        this.credential = credential
-        await this.refresh(true)
+        this.savedCredential = credential
+        if (this.credential) await this.refresh(true)
+        else return await this.resume()
       } else if (credential) await this.storage.clear()
     } catch {
       this.publish({ status: 'signed-out', models: [], canCall: false,
@@ -173,17 +180,15 @@ export class BambooAccount {
     return this.state()
   }
 
-  async signIn(currency) {
-    if (!validCurrency(currency)) throw new BambooError('invalid_currency', 'Choose USD or CNY as the billing currency.')
-    if (this.aborters.size) throw new BambooError('requests_active', 'Finish or stop current calls before changing billing currency.')
+  async signIn() {
     if (this.persisting) throw new BambooError('connection_busy', 'Wait for the current connection to finish.')
-    if (this.credential?.currency === currency || this.attempt || this.value.status === 'connecting') return this.state()
+    if (this.credential || this.attempt || this.value.status === 'connecting') return this.state()
     this.storage.assertAvailable()
     const generation = ++this.generation
-    this.publish({ status: 'connecting', pendingCurrency: currency, models: [], canCall: false })
+    this.publish({ status: 'connecting', models: [], canCall: false })
     try {
-      const { value } = await this.json('/api/desktop/authorizations', { method: 'POST', body: { name: `Bamboo Desktop (${process.platform})`, currency } })
-      if (value.currency !== currency || typeof value.device_code !== 'string' || value.device_code.length < 32 || value.device_code.length > 128 ||
+      const { value } = await this.json('/api/desktop/authorizations', { method: 'POST', body: { name: `Bamboo Desktop (${process.platform})`, currency: billingCurrency } })
+      if (value.currency !== billingCurrency || typeof value.device_code !== 'string' || value.device_code.length < 32 || value.device_code.length > 128 ||
         !/^[A-Z2-7]{4}-[A-Z2-7]{4}$/.test(value.user_code) || value.verification_uri !== this.site + '/desktop/authorize' ||
         !Number.isFinite(value.expires_in) || value.expires_in < 1 || value.expires_in > 900) {
         throw new BambooError('invalid_response', 'Bamboo returned an invalid sign-in request.', 502, 'invalid_sign_in')
@@ -194,9 +199,9 @@ export class BambooAccount {
       }
       const url = new URL(value.verification_uri)
       url.searchParams.set('code', value.user_code)
-      this.attempt = { currency, device: value.device_code, url: url.href, expiresAt: Date.now() + value.expires_in * 1000, generation,
+      this.attempt = { device: value.device_code, url: url.href, expiresAt: Date.now() + value.expires_in * 1000, generation,
         interval: Math.max(this.pollInterval, Math.min(30_000, (Number(value.interval) || 3) * 1000)) }
-      this.publish({ status: 'waiting', pendingCurrency: currency, models: [], canCall: false, code: value.user_code, expiresAt: this.attempt.expiresAt })
+      this.publish({ status: 'waiting', models: [], canCall: false, code: value.user_code, expiresAt: this.attempt.expiresAt })
       this.schedulePoll()
       await this.openExternal(url.href)
     } catch (error) {
@@ -230,9 +235,9 @@ export class BambooAccount {
     try {
       const { value, status } = await this.json('/api/desktop/token', { method: 'POST', body: { device_code: attempt.device } })
       if (status === 202 && value.status === 'pending') { if (this.attempt === attempt) this.schedulePoll(); return }
-      if (value.currency !== attempt.currency || typeof value.token !== 'string' || !/^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) ||
+      if (value.currency !== billingCurrency || typeof value.token !== 'string' || !/^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) ||
         typeof value.key_id !== 'string' || !Number.isFinite(Date.parse(value.expires_at)) || Date.parse(value.expires_at) <= Date.now()) {
-        if (typeof value.token === 'string' && /^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) && value.token !== this.credential?.token) await this.json('/api/desktop/session', { token: value.token, method: 'DELETE' }).catch(() => {})
+        if (typeof value.token === 'string' && /^bbr-[A-Za-z0-9_-]{32,128}$/.test(value.token) && value.token !== this.savedCredential?.token) await this.json('/api/desktop/session', { token: value.token, method: 'DELETE' }).catch(() => {})
         throw new BambooError('invalid_response', 'The sign-in result could not be confirmed. Start sign-in again.', 502, 'sign_in_unconfirmed')
       }
       if (this.attempt !== attempt || this.generation !== attempt.generation) {
@@ -240,7 +245,7 @@ export class BambooAccount {
         return
       }
       const credential = { site: this.site, gateway: this.gateway, currency: value.currency, token: value.token, keyId: value.key_id, expiresAt: value.expires_at }
-      const previous = this.credential
+      const previous = this.savedCredential
       const operation = (async () => {
         try { await this.storage.write(credential) }
         catch {
@@ -248,13 +253,13 @@ export class BambooAccount {
           throw new BambooError('storage', 'The device credential could not be saved securely. Unlock your system keychain and sign in again.')
         }
         if (this.attempt !== attempt || this.generation !== attempt.generation) {
-          if (this.credential) await this.storage.write(this.credential)
+          if (this.savedCredential) await this.storage.write(this.savedCredential)
           else await this.storage.clear()
           await this.json('/api/desktop/session', { token: value.token, method: 'DELETE' }).catch(() => {})
           return false
         }
         this.attempt = null
-        this.credential = credential
+        this.savedCredential = credential
         this.lastRefresh = 0
         return true
       })()
@@ -263,17 +268,20 @@ export class BambooAccount {
       try { accepted = await operation }
       finally { if (this.persisting === operation) this.persisting = null }
       if (!accepted) return
-      let revokeError = ''
+      let revokeFailed = false
       if (previous && previous.token !== credential.token) {
         try { await this.json('/api/desktop/session', { token: previous.token, method: 'DELETE' }) }
         catch (error) {
-          if (!(error instanceof BambooError && error.status === 401)) revokeError = 'Currency changed. The previous device connection could not be revoked. Revoke it on the API keys page.'
+          revokeFailed = !(error instanceof BambooError && error.status === 401)
         }
       }
       if (this.credential !== credential || this.generation !== attempt.generation) return
       this.publish({ status: 'signed-in', models: [], canCall: false })
       await this.refresh(true)
-      if (revokeError) this.publish({ ...this.value, errorKey: 'previous_device_revoke_failed', error: revokeError })
+      if (revokeFailed && this.credential === credential && this.generation === attempt.generation) {
+        this.publish({ ...this.value, errorKey: 'previous_device_revoke_failed',
+          error: 'The previous device connection could not be revoked. Revoke it on the API keys page.' })
+      }
     } catch (error) {
       if (this.attempt !== attempt) return
       if (error instanceof BambooError && (error.code === 'network' || error.status === 429 || error.status >= 500 && error.code !== 'invalid_response')) {
@@ -287,9 +295,12 @@ export class BambooAccount {
   }
 
   async resume(failure) {
-    this.publish({ status: this.credential ? 'signed-in' : 'signed-out', models: [], canCall: false })
+    const credential = this.credential
+    const notice = this.savedCredential && !credential ?
+      { noticeKey: 'connect_cny_wallet', notice: 'Sign in again to connect your CNY wallet.' } : undefined
+    this.publish({ status: credential ? 'signed-in' : 'signed-out', models: [], canCall: false, ...notice })
     this.lastRefresh = 0
-    if (this.credential) await this.refresh(true)
+    if (credential) await this.refresh(true)
     if (failure) this.publish({ ...this.value, ...failure })
     return this.state()
   }
@@ -318,11 +329,11 @@ export class BambooAccount {
           this.json('/api/desktop/models', { token: credential.token }),
         ])
         if (generation !== this.generation || credential !== this.credential) return this.state()
-        const account = parseAccount(session.value, credential.currency)
-        const models = parseModels(catalog.value, credential.currency)
+        const account = parseAccount(session.value)
+        const models = parseModels(catalog.value)
         this.lastRefresh = Date.now()
         const blocker = accountBlocker(account)
-        const notice = blocker ?? (models.length === 0 ? { noticeKey: 'no_models', notice: `No chat models are available for ${credential.currency} billing. Choose another billing currency or check again later.` } : undefined)
+        const notice = blocker ?? (models.length === 0 ? { noticeKey: 'no_models', notice: 'No chat models are available for CNY billing. Check again later.' } : undefined)
         return this.publish({ status: 'signed-in', account, models, canCall: !blocker && models.length > 0, notice: '', ...notice })
       } catch (error) {
         if (generation !== this.generation || credential !== this.credential) return this.state()
@@ -337,7 +348,7 @@ export class BambooAccount {
 
   async expire() {
     ++this.generation
-    this.credential = null
+    this.savedCredential = null
     for (const controller of this.aborters) controller.abort()
     await this.storage.clear()
     return this.publish({ status: 'signed-out', models: [], canCall: false,
@@ -345,8 +356,8 @@ export class BambooAccount {
   }
 
   async signOut() {
-    const credential = this.credential
-    this.credential = null
+    const credential = this.savedCredential
+    this.savedCredential = null
     await this.cancel()
     for (const controller of this.aborters) controller.abort()
     await this.storage.clear()
@@ -366,7 +377,7 @@ export class BambooAccount {
     const paths = { billing: '/billing', requests: '/requests', account: '/settings', keys: '/keys', support: '/tickets' }
     if (!Object.hasOwn(paths, page)) throw new BambooError('invalid_page', 'Unknown Bamboo page')
     const url = new URL(this.site + paths[page])
-    if (this.credential && ['billing', 'requests'].includes(page)) url.searchParams.set('currency', this.credential.currency)
+    if (page === 'billing' || page === 'requests') url.searchParams.set('currency', billingCurrency)
     await this.openExternal(url.href)
   }
 
@@ -386,8 +397,7 @@ export class BambooAccount {
     if (!this.value.models.some(model => model.id === body.model)) throw new BambooError('model_unavailable', userError('model_unavailable'), 400)
     const controller = new AbortController()
     this.aborters.add(controller)
-    this.publish({ ...this.value })
-    const release = () => { if (this.aborters.delete(controller)) this.publish({ ...this.value }) }
+    const release = () => { this.aborters.delete(controller) }
     try {
       const response = await this.send(this.gateway + '/v1/chat/completions', {
         method: 'POST', redirect: 'error',
@@ -395,7 +405,7 @@ export class BambooAccount {
         body: JSON.stringify(body), signal: AbortSignal.any([signal, controller.signal]),
       })
       if (response.status === 401 && credential === this.credential && generation === this.generation) { release(); await this.expire() }
-      return { response, release, currency: credential.currency }
+      return { response, release }
     } catch {
       release()
       if (signal.aborted || controller.signal.aborted) throw new BambooError('cancelled', 'Request cancelled. Check request history for its final charge.', 499)

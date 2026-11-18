@@ -21,6 +21,14 @@ export function applyOverrides(directory) {
   copy('WelcomePage.tsx', 'apps/desktop/src/client/WelcomePage.tsx')
   copy('welcome.css', 'apps/desktop/renderer/welcome.css')
   copy('mark.svg', 'apps/desktop/renderer/assets/welcome-brand.svg')
+  for (const file of ['brand-font.css', 'instrument-sans-latin.woff2', 'instrument-sans-OFL.txt']) {
+    copy(file, 'apps/desktop/renderer/assets/bamboo/' + file)
+    copy(file, 'apps/web/public/assets/bamboo/' + file)
+  }
+  copy('mark.svg', 'apps/web/public/assets/bamboo/mark.svg')
+  copy('workspace.css', 'apps/web/public/assets/bamboo/workspace.css')
+  copy('apple-touch-icon.png', 'apps/web/public/assets/bamboo/apple-touch-icon.png')
+  copy('manifest.webmanifest', 'apps/web/public/manifest.webmanifest')
   copy('launch.ts', 'apps/desktop/scripts/bamboo.ts')
   copy('brand.ts', 'packages/client/ui-brand-official/src/client/index.ts')
   copy('Brand.tsx', 'packages/client/ui-brand-official/src/client/Brand.tsx')
@@ -62,7 +70,28 @@ export function applyOverrides(directory) {
   output.set('apps/desktop/scripts/bamboo-profile.json', readFileSync(join(root, 'config/profile.patch.json')))
 
   replace('apps/desktop/src/locale.ts', [['DeepSeek Harness', 'Bamboo Desktop']])
-  replace('apps/web/index.html', [['<title>DSH Local Build</title>', '<title>Bamboo Desktop</title>']])
+  replace('apps/desktop/renderer/welcome.html', [
+    ['../lib/welcome/brand-font.css', 'assets/bamboo/brand-font.css'],
+  ])
+  replace('apps/web/index.html', [
+    ['<title>DSH Local Build</title>', '<title>Bamboo Desktop</title>'],
+    ['<body>', '<body class="bamboo-workspace">'],
+    ['href="/apple-touch-icon.png"', 'href="/assets/bamboo/apple-touch-icon.png"'],
+    ['name="apple-mobile-web-app-title" content="DSH"', 'name="apple-mobile-web-app-title" content="Bamboo Desktop"'],
+    ['    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />\n    <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />', '    <link rel="icon" type="image/svg+xml" href="/assets/bamboo/mark.svg" />\n    <link rel="stylesheet" href="/assets/bamboo/brand-font.css" />\n    <link rel="stylesheet" href="/assets/bamboo/workspace.css" />'],
+  ])
+  replace('apps/web/src/main.ts', [
+    ["/** Browser entry for the Web client. */\nimport '@deepseek-ai/dsh-client-ui-theme/brand-font.css'\n", ''],
+  ])
+  replace('packages/client/web/src/boot-page.ts', [
+    ["this.wordmark = div(css.wordmark, 'HARNESS')", "this.wordmark = div(css.wordmark, 'Bamboo Desktop')\n    this.wordmark.dataset.bambooBootBrand = ''"],
+  ])
+  replace('packages/client/ui-layout/src/client/AppFrame.tsx', [
+    ['<div className={css.sidebarCol}', '<div className={css.sidebarCol} data-bamboo-sidebar'],
+  ])
+  replace('packages/client/ui-conversation/src/client/skeleton/InputBar.tsx', [
+    ['className={css.primary}', 'className={css.primary} data-bamboo-composer-action'],
+  ])
   replace('packages/client/ui-conversation/src/client/locales.ts', [["'hero.headline': 'Into the Unknown'", "'hero.headline': 'What will you build?'" ]])
   replace('apps/desktop-host/src/index.ts', [
     ["import { delimiter, join } from 'node:path'", "import { delimiter, join } from 'node:path'\nimport { receiveBambooBridge } from './bamboo-bridge.ts'"],
@@ -120,6 +149,8 @@ export function applyOverrides(directory) {
     ['  const systemLanguages = app.getPreferredSystemLanguages()', "  const systemLanguages = ['en']"],
     ['systemLanguages', 'defaultDesktopLanguages'],
     ["applicationName: 'DeepSeek Harness'", "applicationName: 'Bamboo Desktop'"],
+    ["'resources', 'icon-windows.png'", "'resources', 'bamboo', 'icon.png'"],
+    ["'resources', 'tray-windows.ico'", "'resources', 'bamboo', 'icon.ico'"],
     ["app.setAsDefaultProtocolClient('dsh')", "app.setAsDefaultProtocolClient(process.env.BAMBOO_PROTOCOL ?? 'bamboo')"],
     ["url === 'dsh://open' || url === 'dsh://open/'", "url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open` || url === `${process.env.BAMBOO_PROTOCOL ?? 'bamboo'}://open/`"],
     ["    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },\n", ''],

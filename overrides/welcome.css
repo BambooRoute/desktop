@@ -1,33 +1,167 @@
-:root {
+body {
   color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --bamboo-ink: #244c38;
-  --bamboo-background: #f6f8ed;
-  --bamboo-muted: #57665b;
-  --bamboo-button: #244c38;
-  --bamboo-button-ink: #fff;
+  --bamboo-ink: #221b18;
+  --bamboo-muted: #645c55;
+  --bamboo-canvas: #f5f2ec;
+  --bamboo-paper: #fffdf9;
+  --bamboo-tint: #efe6e0;
+  --bamboo-border: #e1d8d0;
+  --bamboo-control-border: #918279;
+  --bamboo-accent: #843f34;
+  --bamboo-primary: #652e2b;
+  --bamboo-primary-hover: #47201e;
+  --bamboo-on-primary: #fff8f2;
+  --bamboo-focus: #99554e;
+  --bamboo-error: #922f28;
+
+  margin: 0;
+  color: var(--bamboo-ink);
+  background: var(--bamboo-canvas);
+  font-family: var(--bamboo-font-family, system-ui, sans-serif);
 }
 
-html, body, #root { min-height: 100%; }
-html { height: 100%; }
-body { margin: 0; background: var(--bamboo-background); color: var(--bamboo-ink); }
-body[data-ds-dark-theme] { color-scheme: dark; --bamboo-ink: #e7efdf; --bamboo-background: #151d18; --bamboo-muted: #b9c5b5; --bamboo-button: #bbd68d; --bamboo-button-ink: #244c38; }
-.titlebar { height: 52px; -webkit-app-region: drag; }
-.bamboo-welcome { max-width: 390px; margin: 24px auto 0; padding: 0 36px 28px; }
-.bamboo-eyebrow { margin: 28px 0 12px; font-size: 14px; font-weight: 500; }
-.bamboo-welcome h1 { margin: 0; font-size: 39px; line-height: 1.12; font-weight: 500; letter-spacing: -1.5px; }
-.bamboo-description { margin: 22px 0 32px; color: var(--bamboo-muted); font-size: 15px; line-height: 1.65; }
-.bamboo-primary { padding: 14px 24px; border: 0; border-radius: 9px; background: var(--bamboo-button); color: var(--bamboo-button-ink); font: inherit; font-weight: 500; cursor: pointer; }
-.bamboo-primary:hover:not(:disabled) { filter: brightness(1.12); }
-.bamboo-primary:focus-visible { outline: 3px solid #73975c; outline-offset: 4px; }
-.bamboo-primary:disabled { cursor: wait; opacity: .65; }
-.bamboo-error { color: #9b332a; font-size: 14px; line-height: 1.5; }
-body[data-ds-dark-theme] .bamboo-error { color: #ffb4a8; }
-.bamboo-code { font-family: monospace; font-size: 28px; letter-spacing: .14em; margin: -16px 0 24px; }
-.bamboo-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.bamboo-secondary { padding: 14px 20px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--bamboo-muted); border-radius: 9px; cursor: pointer; }
-.bamboo-secondary:focus-visible { outline: 3px solid #73975c; outline-offset: 4px; }
-.bamboo-secondary:disabled { opacity: .65; cursor: wait; }
+body[data-ds-dark-theme] {
+  color-scheme: dark;
+  --bamboo-ink: #fff8f2;
+  --bamboo-muted: #d2c4bc;
+  --bamboo-canvas: #211a18;
+  --bamboo-paper: #2b2320;
+  --bamboo-tint: #3d2b28;
+  --bamboo-border: #57423b;
+  --bamboo-control-border: #947c71;
+  --bamboo-accent: #e9bfaa;
+  --bamboo-primary: #e9bfaa;
+  --bamboo-primary-hover: #f7d1bf;
+  --bamboo-on-primary: #321b17;
+  --bamboo-focus: #e9bfaa;
+  --bamboo-error: #ffb4a8;
 
-.bamboo-currency { display: flex; flex-direction: column; gap: 8px; margin: 0 0 18px; font-size: 13px; color: #315541; }
-.bamboo-currency select { min-width: 240px; border: 1px solid #c4d6be; border-radius: 8px; background: #fff; color: #244c38; padding: 10px 12px; font: inherit; }
+  background: var(--bamboo-canvas);
+}
+
+.titlebar {
+  height: 52px;
+  -webkit-app-region: drag;
+}
+
+.bamboo-welcome {
+  box-sizing: border-box;
+  max-width: 484px;
+  margin-inline: auto;
+  padding: clamp(24px, 7vh, 52px) 28px 32px;
+}
+
+.bamboo-intro { text-align: center; }
+
+.bamboo-wordmark {
+  margin: 15px 0 18px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.bamboo-wordmark span { color: var(--bamboo-accent); }
+
+.bamboo-welcome h1 {
+  margin: 0;
+  font-size: clamp(30px, 7.4vw, 46px);
+  font-weight: 650;
+  line-height: 1.04;
+  letter-spacing: -0.052em;
+  text-wrap: balance;
+}
+
+.bamboo-description {
+  margin: 0;
+  color: var(--bamboo-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.bamboo-intro .bamboo-description {
+  max-width: 36ch;
+  margin: 16px auto 0;
+  text-wrap: pretty;
+}
+
+.bamboo-sign-in {
+  display: grid;
+  gap: 14px;
+  max-width: 320px;
+  margin: 26px auto 0;
+}
+
+.bamboo-sign-in[data-waiting] {
+  max-width: none;
+  padding: clamp(16px, 4vw, 24px);
+  border: 1px solid var(--bamboo-border);
+  border-radius: 9px;
+  background: var(--bamboo-paper);
+}
+
+.bamboo-reconnect { text-align: center; }
+
+.bamboo-primary, .bamboo-secondary {
+  min-height: 44px;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bamboo-primary {
+  background: var(--bamboo-primary);
+  color: var(--bamboo-on-primary);
+}
+
+.bamboo-primary:hover:not(:disabled) { background: var(--bamboo-primary-hover); }
+
+.bamboo-secondary {
+  border-color: var(--bamboo-control-border);
+  background: var(--bamboo-paper);
+  color: var(--bamboo-ink);
+}
+
+.bamboo-secondary:hover:not(:disabled) { background: var(--bamboo-tint); }
+
+.bamboo-sign-in button:focus-visible {
+  outline: 2px solid var(--bamboo-focus);
+  outline-offset: 3px;
+}
+
+.bamboo-sign-in button:disabled {
+  opacity: .65;
+  cursor: default;
+}
+
+.bamboo-code {
+  margin: 0;
+  padding: 12px 8px;
+  border: 1px solid var(--bamboo-border);
+  border-radius: 8px;
+  background: var(--bamboo-tint);
+  color: var(--bamboo-accent);
+  font: 600 clamp(18px, 5vw, 29px) / 1.25 ui-monospace, monospace;
+  letter-spacing: .12em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.bamboo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bamboo-actions button { flex: 1 1 auto; }
+.bamboo-actions .bamboo-primary { flex-grow: 2; }
+
+.bamboo-error {
+  margin: 0;
+  color: var(--bamboo-error);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

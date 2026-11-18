@@ -1,0 +1,106 @@
+html:root {
+  --dsh-font-family-text-default: var(--bamboo-font-family);
+  --dsw-font-family-brand: var(--bamboo-font-family);
+}
+
+html > body.bamboo-workspace {
+  --bamboo-accent: #843f34;
+  --bamboo-accent-surface: #efe6e0;
+  --bamboo-workspace-ink: #24272a;
+  --bamboo-workspace-muted: #545a61;
+  --bamboo-workspace-quiet: #656b72;
+  --bamboo-workspace-base: #fff;
+  --bamboo-workspace-surface: #f6f7f8;
+  --bamboo-workspace-tint: #f0f1f2;
+  --bamboo-workspace-border: #e4e6e8;
+  --bamboo-workspace-border-strong: #c4c9ce;
+  --bamboo-workspace-primary: #292d32;
+  --bamboo-workspace-primary-hover: #191c20;
+  --bamboo-workspace-on-primary: #fff;
+  --bamboo-sidebar-opacity: 76%;
+  --dsw-alias-bg-base: var(--bamboo-workspace-base);
+  --dsw-alias-bg-module-platform: var(--bamboo-workspace-surface);
+  --dsw-alias-border-l3: var(--bamboo-workspace-border);
+  --dsw-alias-border-l4: var(--bamboo-workspace-border-strong);
+  --dsw-alias-brand-primary: var(--bamboo-workspace-primary);
+  --dsw-alias-button-primary-hover: var(--bamboo-workspace-primary-hover);
+  --dsw-alias-label-primary: var(--bamboo-workspace-ink);
+  --dsw-alias-label-primary-bluish: var(--bamboo-accent);
+  --dsw-alias-label-primary-foreground: var(--bamboo-workspace-on-primary);
+  --dsw-alias-label-secondary: var(--bamboo-workspace-muted);
+  --dsw-alias-label-tertiary: var(--bamboo-workspace-quiet);
+  --dsw-alias-state-business-primary: var(--bamboo-accent);
+  --dsw-alias-state-business-tertiary: var(--bamboo-accent-surface);
+  --dsw-alias-settings-card-stroke: var(--bamboo-workspace-border);
+  --dsw-specific-bubble: var(--bamboo-workspace-surface);
+  --dsw-specific-bubble-highlight: var(--bamboo-workspace-tint);
+  --dsw-specific-sidebar-fill: var(--bamboo-workspace-surface);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--bamboo-accent-surface);
+  --dsw-specific-sidebar-nav-item-active: var(--bamboo-workspace-tint);
+
+  font-family: var(--dsw-font-family, var(--bamboo-font-family));
+}
+
+body.bamboo-workspace[data-ds-dark-theme] {
+  --bamboo-accent: #e9bfaa;
+  --bamboo-accent-surface: #42312d;
+  --bamboo-workspace-ink: #f2f3f4;
+  --bamboo-workspace-muted: #c5cbd1;
+  --bamboo-workspace-quiet: #aeb5bd;
+  --bamboo-workspace-base: #191c20;
+  --bamboo-workspace-surface: #23262a;
+  --bamboo-workspace-tint: #30343a;
+  --bamboo-workspace-border: #373c42;
+  --bamboo-workspace-border-strong: #5e656e;
+  --bamboo-workspace-primary: #e8eaed;
+  --bamboo-workspace-primary-hover: #fff;
+  --bamboo-workspace-on-primary: #191c20;
+}
+
+html[data-platform='darwin'] :is(body.bamboo-workspace, body.bamboo-workspace[data-ds-dark-theme])
+  :not([data-sidebar-drawer]) > [data-bamboo-sidebar] {
+  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) var(--bamboo-sidebar-opacity), transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html > body.bamboo-workspace { --bamboo-sidebar-opacity: 100%; }
+}
+
+.bamboo-brand-mark { display: block; }
+
+.bamboo-brand-name {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bamboo-brand-name > span { color: var(--bamboo-accent); }
+
+body.bamboo-workspace [data-bamboo-composer-action] {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+@media (hover: hover) {
+  body.bamboo-workspace [data-bamboo-composer-action]:hover:not(:disabled) {
+    background: var(--dsw-alias-button-primary-hover);
+  }
+}
+
+[data-dsh-boot] [data-bamboo-boot-brand] {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 650 18px / 1.3 var(--bamboo-font-family);
+  letter-spacing: -0.025em;
+}
+
+[data-bamboo-boot-brand]::before {
+  content: "";
+  width: 30px;
+  height: 30px;
+  background: url("./mark.svg") center / contain no-repeat;
+}
