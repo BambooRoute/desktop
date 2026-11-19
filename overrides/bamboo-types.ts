@@ -9,6 +9,7 @@ export interface BambooModel {
   maxOutput: number
   vision: boolean
   tools: boolean
+  reasoningEfforts: string[]
   currency: 'CNY'
   prices: Record<string, string>
 }

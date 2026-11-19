@@ -42,7 +42,7 @@ function fixture() {
     account: { email: 'member@example.test', emailVerified: true, modelAccess: true, policyReady: true, policyAccepted: true,
       currency: 'CNY', wallet: { currency: 'CNY', balance: '70', reserved: '1.1', available: '68.9' }, canTopUp: false },
     models: [{ id: 'DeepSeek-V4.1-Flash-1017', name: 'DeepSeek V4.1 Flash (1017)', provider: 'openai', vendor: 'deepseek',
-      contextWindow: 1_048_576, maxOutput: 393_216, vision: false, tools: false, currency: 'CNY', prices: { input: '0.123456789', output: '1.23' } }],
+      contextWindow: 1_048_576, maxOutput: 393_216, vision: false, tools: false, reasoningEfforts: [], currency: 'CNY', prices: { input: '0.123456789', output: '1.23' } }],
   }
   let receive: (value: BambooState) => void = () => {}
   const api: BambooApi = { state: vi.fn(async () => state), signIn: vi.fn(async () => state), cancel: vi.fn(async () => state), refresh: vi.fn(async () => state),

@@ -66,7 +66,7 @@ export function applyOverrides(directory) {
   output.set('apps/desktop/tests/bamboo-account.client.spec.tsx', readFileSync(join(root, 'test/account.client.spec.tsx')))
   output.set('apps/desktop/tests/bamboo-welcome.client.spec.tsx', readFileSync(join(root, 'test/welcome.client.spec.tsx')))
   output.set('apps/desktop/tests/welcome-host.spec.ts', readFileSync(join(root, 'test/welcome-host.spec.ts')))
-  output.set('apps/desktop/tests/bamboo-catalog.client.spec.tsx', readFileSync(join(root, 'test/catalog-account.spec.ts')))
+  output.set('apps/desktop/tests/bamboo-catalog.client.spec.tsx', readFileSync(join(root, 'test/catalog-account.spec.tsx')))
   output.set('apps/desktop/scripts/bamboo-profile.json', readFileSync(join(root, 'config/profile.patch.json')))
 
   replace('apps/desktop/src/locale.ts', [['DeepSeek Harness', 'Bamboo Desktop']])
@@ -111,8 +111,15 @@ export function applyOverrides(directory) {
     ['      const events = snapshot.models.streamSimple', "      const mapFailure = this.config.mapFailure\n      let responseHeaders: Readonly<Record<string, string>> | undefined\n      const onResponse: SimpleStreamOptions['onResponse'] = ({ headers }) => { responseHeaders = headers }\n      const events = snapshot.models.streamSimple"],
     ['        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),', '        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),\n        ...mapFailure ? { onResponse } : {},'],
     ['await watchdog.next(iterator)', 'await (watchdog?.next(iterator) ?? iterator.next())'],
+    ['      const events = snapshot.models.streamSimple(model, context, {', `      const requestModel = model.provider === 'bamboo' && reasoning === undefined && model.thinkingLevelMap?.off === 'none'
+        ? { ...model, thinkingLevelMap: { ...model.thinkingLevelMap, off: null } }
+        : model
+      const events = snapshot.models.streamSimple(requestModel, context, {`],
     ['          yield result.value', "          const chunk = result.value\n          if (mapFailure && chunk.type === 'finish' && chunk.reason.kind === 'error') {\n            yield { ...chunk, reason: { kind: 'error', failure: mapFailure(chunk.reason.failure, responseHeaders) } }\n          } else {\n            yield chunk\n          }"],
     ["if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)", "if (watchdog && timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined)"],
+  ])
+  replace('packages/llm/llm-pi-ai/src/catalog.ts', [
+    ["if (!declared.some(([level]) => level !== 'off'))", "if (!declared.some(([level]) => level !== 'off') && !(provider === 'bamboo' && efforts.off === 'none'))"],
   ])
   replace('packages/api/session-controller/src/catalog.ts', [
     ['defaultSelection: ModelSelection = ctx.agentDefaultModel.currentSelection(),', 'defaultSelection?: ModelSelection,'],
@@ -121,6 +128,10 @@ export function applyOverrides(directory) {
   replace('packages/client/ui-model-selection/src/client/service.ts', [
     ["import { ModelCatalogDirectory } from './catalog.ts'", "import { ModelCatalogDirectory } from './catalog.ts'\nimport { watchDesktopCatalog } from './bamboo-account.ts'"],
     ["this.catalog = new ModelCatalogDirectory(ctx)", "this.catalog = new ModelCatalogDirectory(ctx)\n    ctx.effect(() => watchDesktopCatalog(() => this.catalog.resetGeneration()))"],
+  ])
+  replace('packages/client/ui-model-selection/src/client/ModelSelect.tsx', [
+    ['  const reasoning = currentChoice?.model.reasoning', `  const resetSavedEffort = currentChoice?.group.id === 'bamboo' && state.current?.reasoningEffort !== undefined
+  const reasoning = currentChoice?.model.reasoning ?? (resetSavedEffort ? { efforts: [], defaultEffort: undefined } : undefined)`],
   ])
   replace('apps/desktop/src/host-process.ts', [
     ['private readonly onPluginOperation?: (record: PluginOperationRecord) => void,', 'private readonly onPluginOperation?: (record: PluginOperationRecord) => void,\n    private readonly bambooBridge?: { url: string; token: string },'],

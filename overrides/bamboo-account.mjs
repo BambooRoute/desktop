@@ -32,6 +32,7 @@ const gatewayMessages = {
   site_maintenance: 'Bamboo is undergoing maintenance. Please try again later.',
   site_coming_soon: 'Bamboo is not open for model calls yet. Please try again later.',
   model_unavailable: 'This model is no longer available. Refresh the model list and choose another model.',
+  reasoning_effort_unavailable: 'This reasoning effort is unavailable. Choose another effort or use the model default.',
   unsupported_parameter: 'This model does not support part of the request. Choose another compatible model.',
   request_forbidden: 'This request is not allowed for your account or device. Check your account access and API key settings.',
   service_version: 'The Bamboo service does not support this desktop version yet. Update the service and try again.',
@@ -83,8 +84,12 @@ export function parseModels(value) {
       if (price !== undefined) prices[field] = price
     }
     const vendor = typeof model.capabilities.vendor === 'string' ? model.capabilities.vendor.trim() || undefined : undefined
+    const { reasoning_efforts: reasoningEfforts = [] } = model.capabilities
+    if (!Array.isArray(reasoningEfforts) || !reasoningEfforts.every(effort => typeof effort === 'string')) {
+      throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
+    }
     return [{ id: model.id, name: model.name, provider: model.provider, vendor, contextWindow, maxOutput: model.max_output_tokens,
-      vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, currency: billingCurrency, prices }]
+      vision: model.capabilities.vision === true, tools: model.capabilities.tools === true, reasoningEfforts, currency: billingCurrency, prices }]
   })
 }
 
@@ -189,7 +194,8 @@ export class BambooAccount {
     try {
       const { value } = await this.json('/api/desktop/authorizations', { method: 'POST', body: { name: `Bamboo Desktop (${process.platform})`, currency: billingCurrency } })
       if (value.currency !== billingCurrency || typeof value.device_code !== 'string' || value.device_code.length < 32 || value.device_code.length > 128 ||
-        !/^[A-Z2-7]{4}-[A-Z2-7]{4}$/.test(value.user_code) || value.verification_uri !== this.site + '/desktop/authorize' ||
+        !/^[A-Z2-7]{4}-[A-Z2-7]{4}$/.test(value.user_code) ||
+        ![this.site + '/connect/authorize', this.site + '/desktop/authorize'].includes(value.verification_uri) ||
         !Number.isFinite(value.expires_in) || value.expires_in < 1 || value.expires_in > 900) {
         throw new BambooError('invalid_response', 'Bamboo returned an invalid sign-in request.', 502, 'invalid_sign_in')
       }

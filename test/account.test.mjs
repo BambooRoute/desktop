@@ -222,6 +222,10 @@ test('service origins and catalog capabilities are validated before use', () => 
   const [chat] = parseModels([{ ...model, capabilities: { chat: true, tools: false } }])
   assert.equal(chat.tools, false)
   assert.equal(chat.vendor, undefined)
+  assert.deepEqual(chat.reasoningEfforts, [])
+  const capabilities = { chat: true, reasoning_efforts: ['none', 'high'] }
+  assert.deepEqual(parseModels([{ ...model, capabilities }])[0].reasoningEfforts, ['none', 'high'])
+  assert.throws(() => parseModels([{ ...model, capabilities: { ...capabilities, reasoning_efforts: 'high' } }]), { code: 'invalid_catalog' })
   assert.deepEqual(parseModels([{ ...model, capabilities: { chat: false, images: true } }]), [])
 })
 

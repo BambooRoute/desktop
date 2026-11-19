@@ -4,16 +4,26 @@ import type { GenerateOptions, LlmFailure, LlmModelInfo, LlmResolvedModelInfo, P
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-fs'
 import { PiAiAdapter } from './adapter.ts'
+import { THINKING_LEVELS, type PiAiReasoningEfforts } from './catalog.ts'
 import { resolveProfiles } from './config.ts'
 import { credentialStoreFrom, authContextFrom } from './auth.ts'
 
-interface Model { id: string; name: string; provider: string; contextWindow: number; maxOutput: number; vision: boolean; tools: boolean; currency: 'USD' | 'CNY'; prices: Record<string, string> }
+interface Model { id: string; name: string; provider: string; vendor?: string; contextWindow: number; maxOutput: number; vision: boolean; tools: boolean; reasoningEfforts?: string[]; currency: 'USD' | 'CNY'; prices: Record<string, string> }
 interface Bridge { url: string; token: string }
 const accountStatuses = ['signed-out', 'connecting', 'waiting', 'signed-in'] as const
 type AccountStatus = typeof accountStatuses[number]
 interface Catalog { generation: number; status: AccountStatus; models: Model[]; error?: string }
 const retry: ResolvedRetryPolicy = { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }
 const gatewayRefusalMessage = 'The model declined this request. Revise the message and try again.'
+
+function reasoningProfile(efforts: readonly string[] = []): PiAiReasoningEfforts | false {
+  const levels: PiAiReasoningEfforts = {}
+  for (const level of THINKING_LEVELS) {
+    const wire = level === 'off' ? 'none' : level
+    if (efforts.includes(wire)) levels[level] = wire
+  }
+  return Object.keys(levels).length ? levels : false
+}
 
 function modelFailure(failure: LlmFailure, headers?: Readonly<Record<string, string>>): LlmFailure {
   const refused = failure.message === gatewayRefusalMessage || failure.message === 'Provider finish_reason: content_filter'
@@ -84,11 +94,11 @@ export class BambooAdapter extends LlmAdapter {
             displayName: 'Bamboo', api: 'openai-completions', apiKeyEnv: 'BAMBOO_PRIVATE_PROXY',
             baseURL: `${this.bridge.url}/session/${catalog.generation}/v1`,
             retryPolicy: { mode: 'normal', maxRetries: 0 },
-            compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
-              supportsUsageInStreaming: true, supportsStrictMode: false, maxTokensField: 'max_tokens',
-              requiresReasoningContentOnAssistantMessages: true },
+            compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: true,
+              supportsUsageInStreaming: true, supportsStrictMode: false, maxTokensField: 'max_tokens', thinkingFormat: 'openai' },
             models: catalog.models.map(model => ({ id: model.id, name: model.name, contextWindow: model.contextWindow, maxTokens: model.maxOutput,
-              input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: false })),
+              input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: reasoningProfile(model.reasoningEfforts),
+              compat: { requiresReasoningContentOnAssistantMessages: (model.vendor || model.provider) === 'deepseek' } })),
           } })
           this.adapter = new PiAiAdapter({ profiles: () => profiles, resolveApiKey: async () => this.bridge.token,
             waitForUpstream: true,

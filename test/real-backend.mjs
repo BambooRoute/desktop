@@ -41,7 +41,7 @@ const account = new BambooAccount({
     const url = new URL(value)
     opened.push(value)
     assert.equal(url.origin, origin)
-    if (url.pathname !== '/desktop/authorize' || !approve) return
+    if (url.pathname !== '/connect/authorize' || !approve) return
     await approveDevice(url.searchParams.get('code'), 'CNY')
   },
 })
@@ -73,13 +73,16 @@ try {
   assert.equal(account.state().account.wallet.available, '100')
   assert.equal(account.state().account.canTopUp, false)
   assert.equal(account.state().canCall, true)
-  assert.equal(account.state().models.find(model => model.id === 'openai-demo').prices.input, '14')
+  const model = account.state().models.find(model => model.id === 'openai-demo')
+  assert.equal(model.prices.input, '14')
+  assert.deepEqual(model.reasoningEfforts, ['high'])
   assert.ok(account.state().models.every(model => model.currency === 'CNY'))
   assert.equal(saved.currency, 'CNY')
   assert.ok(saved.token !== grant.token)
   const revoked = await fetch(origin + '/api/desktop/session', { headers: { authorization: `Bearer ${grant.token}` } })
   assert.equal(revoked.status, 401)
-  const body = JSON.stringify({ model: 'openai-demo', messages: [{ role: 'user', content: 'CNY integration' }], stream: true, max_tokens: 64 })
+  const body = JSON.stringify({ model: model.id, messages: [{ role: 'user', content: 'CNY integration' }], stream: true,
+    reasoning_effort: model.reasoningEfforts[0], max_tokens: 64 })
   const stale = await fetch(`${bridge.url}/session/${oldGeneration}/v1/chat/completions`, { method: 'POST', headers: bridgeHeaders, body })
   assert.equal(stale.status, 409)
   assert.equal((await stale.json()).error.code, 'account_changed')

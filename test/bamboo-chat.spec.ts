@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { idleWatchdog } from '@deepseek-ai/dsh-timeout'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
@@ -59,6 +59,32 @@ it('refreshes token limits when the catalog changes within a signed-in session',
   await expect(adapter.resolveModel('bamboo', 'agent')).resolves.toMatchObject({
     context: { contextWindow: 200_000 }, defaultMaxTokens: 64_000,
   })
+})
+
+it('offers only verified efforts and distinguishes model default from explicit off on the wire', async () => {
+  const levels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+  const desktopCatalog = (efforts: string[]) => ({ body: JSON.stringify({ generation: 1, status: 'signed-in',
+    models: [{ ...chat, reasoningEfforts: efforts }, agent] }) })
+  const server = await mockServer([desktopCatalog(levels), ...levels.map(() => ({ events: textEvents })), { events: textEvents },
+    desktopCatalog(['none']), { events: textEvents }, desktopCatalog([])])
+  const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
+  const call = await adapter.prepareCall('bamboo', 'chat')
+  const options = { provider: 'bamboo', model: 'chat', messages }
+  const ids = ['off', ...levels.slice(1)]
+  expect(call.model.reasoning?.efforts.map(effort => effort.id)).toEqual(ids)
+  for (const [index, id] of ids.entries()) {
+    await collect(call.stream({ ...options, reasoningEffort: ReasoningEffortId(id) }))
+    expect(server.requests.at(-1)).toHaveProperty('reasoning_effort', levels[index])
+  }
+  await collect(call.stream(options))
+  expect(server.requests.at(-1)).not.toHaveProperty('reasoning_effort')
+  const updated = await adapter.prepareCall('bamboo', 'chat')
+  expect(updated.model.reasoning?.efforts.map(effort => effort.id)).toEqual(['off'])
+  await expect(collect(updated.stream({ ...options, reasoningEffort: ReasoningEffortId('high') })))
+    .rejects.toMatchObject({ code: 'UNSUPPORTED_REASONING_EFFORT' })
+  await collect(updated.stream({ ...options, reasoningEffort: ReasoningEffortId('off') }))
+  expect(server.requests.at(-1)).toHaveProperty('reasoning_effort', 'none')
+  expect((await adapter.resolveModel('bamboo', 'chat')).reasoning).toBeUndefined()
 })
 
 it('distinguishes a signed-in account without a usable model from a signed-out account', async () => {
