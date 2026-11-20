@@ -22,7 +22,7 @@ const gatewayMessages = {
   invalid_api_key: 'Your desktop connection expired or was revoked. Sign in again.',
   desktop_authorization_expired: 'The sign-in request expired. Start sign-in again.',
   desktop_authorization_denied: 'The device connection was declined. You can start sign-in again.',
-  insufficient_balance: 'Your CNY wallet has insufficient available funds. Open billing or choose a smaller output limit.',
+  insufficient_balance: 'Your CNY wallet has no positive available balance. Add funds in Billing to continue.',
   invalid_currency: 'Bamboo could not use CNY billing. Check your account and try again.',
   key_budget_exceeded: 'This device reached its spending limit. Update its budget on the API keys page.',
   email_verification_required: 'Verify your email in your Bamboo account, then refresh.',
@@ -63,6 +63,7 @@ function accountError(reason, errorKey, error) {
 
 const validCurrency = value => value === 'USD' || value === 'CNY'
 const validAmount = value => typeof value === 'string' && /^(0|[1-9]\d*)(\.\d{1,9})?$/.test(value)
+const validBalance = value => typeof value === 'string' && /^-?(0|[1-9]\d*)(\.\d{1,9})?$/.test(value)
 
 export function parseModels(value) {
   if (!Array.isArray(value)) throw new BambooError('invalid_catalog', 'Bamboo returned an invalid model list.', 502)
@@ -99,7 +100,7 @@ function parseAccount(value) {
   if (!value || value.currency !== billingCurrency || typeof value.email !== 'string' ||
     typeof value.email_verified !== 'boolean' || typeof value.model_access !== 'boolean' ||
     typeof value.policy?.ready !== 'boolean' || typeof value.policy?.accepted !== 'boolean' ||
-    wallets.length !== 1 || !['balance', 'reserved', 'available'].every(key => validAmount(wallet[key])) ||
+    wallets.length !== 1 || !['balance', 'available'].every(key => validBalance(wallet[key])) || !validAmount(wallet.reserved) ||
     !Array.isArray(value.topup_currencies) || !value.topup_currencies.every(validCurrency)) {
     throw new BambooError('invalid_account', 'Bamboo returned invalid account information. Refresh before making another call.', 502)
   }
@@ -113,7 +114,7 @@ function accountBlocker(account) {
   if (!account.modelAccess) return { noticeKey: 'model_access_disabled', notice: 'Model access is not enabled for your account. Contact Bamboo support.' }
   if (!account.policyReady) return { noticeKey: 'policy_unavailable', notice: gatewayMessages.policy_unavailable }
   if (!account.policyAccepted) return { noticeKey: 'policy_acceptance_required', notice: 'Review the current service policies in your Bamboo account, then refresh.' }
-  if (!/[1-9]/.test(account.wallet.available)) return { noticeKey: 'wallet_empty', notice: `Your ${account.currency} wallet has no available funds. Open billing to check funding options.` }
+  if (Number(account.wallet.available) <= 0) return { noticeKey: 'wallet_empty', notice: `Your ${account.currency} wallet has no available funds. Open billing to check funding options.` }
 }
 
 export class BambooAccount {

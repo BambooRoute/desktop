@@ -159,6 +159,27 @@ test('account eligibility and a stale account generation stop requests before ga
   assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
 })
 
+test('wallet debt stays visible, blocks calls and recovers after a positive top-up', async t => {
+  const f = await fixture(t)
+  await f.account.signIn(); await f.account.poll()
+  const wallet = { currency: 'CNY', balance: '-0.123456789', reserved: '0', available: '-0.123456789' }
+  f.session({ status: 200, value: { ...session, wallets: [wallet] } })
+  const indebted = await f.account.refresh(true)
+  assert.equal(indebted.status, 'signed-in')
+  assert.deepEqual(indebted.account.wallet, wallet)
+  assert.equal(indebted.noticeKey, 'wallet_empty')
+  assert.equal(indebted.canCall, false)
+  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /CNY wallet has no available funds/)
+  assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
+  f.session({ status: 200, value: { ...session, wallets: [{ ...wallet, balance: '0.000000001', available: '0.000000001' }] } })
+  assert.equal((await f.account.refresh(true)).canCall, true)
+  f.session({ status: 200, value: { ...session, wallets: [{ ...wallet, reserved: '-1' }] } })
+  const invalid = await f.account.refresh(true)
+  assert.equal(invalid.errorKey, 'invalid_account')
+  assert.equal(invalid.canCall, false)
+  assert.throws(() => parseModels([{ ...model, sell: { input: '-0.1' } }]), { code: 'invalid_catalog' })
+})
+
 test('authenticated Host proxy preserves tool SSE and does not expose or accept browser credentials', async t => {
   const f = await fixture(t)
   await f.account.signIn(); await f.account.poll()
