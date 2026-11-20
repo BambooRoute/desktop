@@ -5,6 +5,7 @@ import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { BambooAdapter } from '../src/bamboo.ts'
+import { bambooFailureLocales, bambooFailureMessage, decodeBambooFailure } from '../src/bamboo-failure.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 vi.mock('@deepseek-ai/dsh-timeout', async (importOriginal) => {
@@ -177,4 +178,64 @@ it('shows a gateway model refusal and identifies the request', async () => {
     server.closeAllConnections()
     await new Promise<void>(resolve => { server.close(() => resolve()) })
   }
+})
+
+for (const [status, code] of [[402, 'insufficient_balance'], [402, 'key_budget_exceeded'], [403, 'policy_acceptance_required'], [503, 'network'], [401, 'invalid_api_key']] as const) {
+  it(`preserves the Bamboo ${code} reason through the SDK and localized display`, async () => {
+    const requestId = 'req_' + 'c'.repeat(32)
+    const server = await mockServer([catalog, { status, body: JSON.stringify({ error: { code, message: 'private diagnostic must not render', request_id: requestId } }) }])
+    const adapter = new BambooAdapter(new Context(), { url: server.url, token: 'mock-token' })
+    const chunks = await collect(adapter.stream({ provider: 'bamboo', model: 'chat', messages }))
+    const last = chunks.at(-1)
+    expect(last).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: `BAMBOO_${code.toUpperCase()}` } } })
+    if (last?.type !== 'finish' || last.reason.kind !== 'error') throw new Error('Expected a classified failure')
+    expect(last.reason.failure.message).not.toContain('private diagnostic')
+    for (const language of ['en', 'zh'] as const) {
+      const displayed = bambooFailureMessage(last.reason.failure.message, last.reason.failure.code, key => bambooFailureLocales[language][key]!)
+      expect(displayed).toContain(requestId)
+      expect(displayed).not.toContain('private diagnostic')
+      expect(displayed).not.toContain('API 密钥无效')
+    }
+    expect(server.paths).toEqual(['/catalog', '/session/1/v1/chat/completions'])
+  })
+}
+
+it('preserves a budget stop after streamed output without retrying', async () => {
+  const requestId = 'req_' + 'd'.repeat(32)
+  let calls = 0
+  const server = createServer((request, response) => {
+    if (request.url === '/catalog') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(catalog.body)
+      return
+    }
+    request.resume()
+    calls++
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'x-request-id': requestId })
+    for (const event of textEvents.slice(0, 2)) response.write(`data: ${event}\n\n`)
+    response.end('event: error\ndata: ' + JSON.stringify({
+      type: 'error', error: { code: 'insufficient_balance', type: 'insufficient_balance', message: 'Generation stopped because the account balance is insufficient. Check request history before retrying', request_id: requestId }, partial: true,
+    }) + '\n\n')
+  }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind')
+    const adapter = new BambooAdapter(new Context(), { url: `http://127.0.0.1:${address.port}`, token: 'mock-token' })
+    const chunks = await collect(adapter.stream({ provider: 'bamboo', model: 'chat', messages }))
+    expect(chunks).toContainEqual({ type: 'text-delta', index: 0, text: 'hello' })
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'BAMBOO_BALANCE_EXHAUSTED', requestId, message: expect.stringContaining('Check request history') } } })
+    expect(calls).toBe(1)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => { server.close(() => resolve()) })
+  }
+})
+
+it('repairs recorded account failures without displaying arbitrary credential diagnostics', () => {
+  const message = '403: ' + JSON.stringify({ code: 'account_not_ready', message: 'Your CNY wallet has no available funds. Open billing to check funding options.' })
+  expect(decodeBambooFailure({ code: 'AUTH', message })).toMatchObject({ code: 'BAMBOO_INSUFFICIENT_BALANCE' })
+  expect(bambooFailureMessage(message, 'AUTH', key => bambooFailureLocales.zh[key]!)).toContain('余额')
+  expect(decodeBambooFailure({ code: 'AUTH', message: '403: private-token' })).toBeUndefined()
+  expect(decodeBambooFailure({ code: 'AUTH', message: '403: {"code":"unknown","message":"private-token"}' })).toBeUndefined()
 })

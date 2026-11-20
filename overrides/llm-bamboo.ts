@@ -3,6 +3,7 @@ import { LlmAdapter, LlmError, ProviderRequestId, resolveImageAttachmentAccess }
 import type { GenerateOptions, LlmFailure, LlmModelInfo, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-fs'
+import { decodeBambooFailure } from './bamboo-failure.ts'
 import { PiAiAdapter } from './adapter.ts'
 import { THINKING_LEVELS, type PiAiReasoningEfforts } from './catalog.ts'
 import { resolveProfiles } from './config.ts'
@@ -26,9 +27,15 @@ function reasoningProfile(efforts: readonly string[] = []): PiAiReasoningEfforts
 }
 
 function modelFailure(failure: LlmFailure, headers?: Readonly<Record<string, string>>): LlmFailure {
-  const refused = failure.message === gatewayRefusalMessage || failure.message === 'Provider finish_reason: content_filter'
+  const decoded = decodeBambooFailure(failure)
   const header = headers?.['x-request-id']
   const requestId = header && /^req_[a-f0-9]{32}$/.test(header) ? ProviderRequestId(header) : undefined
+  if (decoded) return {
+    ...failure, ...decoded,
+    ...requestId === undefined ? {} : { requestId },
+    message: requestId && !decoded.message.includes(requestId) ? `${decoded.message} Request ID: ${requestId}.` : decoded.message,
+  }
+  const refused = failure.message === gatewayRefusalMessage || failure.message === 'Provider finish_reason: content_filter'
   if (!refused && !requestId) return failure
   const message = refused ? 'The model declined this request. Try starting a new chat with a revised message.' : failure.message
   return {

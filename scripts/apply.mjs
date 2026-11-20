@@ -56,6 +56,35 @@ export function applyOverrides(directory) {
   copy('welcome-backend.ts', 'apps/desktop/src/welcome-backend.ts')
   copy('host-bridge.ts', 'apps/desktop-host/src/bamboo-bridge.ts')
   copy('llm-bamboo.ts', 'packages/llm/llm-pi-ai/src/bamboo.ts')
+  for (const directory of ['packages/llm/llm-pi-ai/src', 'packages/client/ui-chat/src/client', 'packages/client/ui-trajectory/src/client']) {
+    copy('bamboo-failure.ts', directory + '/bamboo-failure.ts')
+    copy('account-locales.ts', directory + '/bamboo-account-locales.ts')
+  }
+  for (const path of ['packages/client/ui-chat/src/client/locale.ts', 'packages/client/ui-trajectory/src/client/locales.ts']) {
+    let text = original(path)
+    for (const locale of ['en', 'zh', 'ja', 'es', 'fr', 'de', 'ru', 'pt']) {
+      const declaration = path.includes('ui-trajectory') && locale === 'en' ? 'export const en: Record<TrajectoryKey, string> = {' : `export const ${locale} = {`
+      text = replaceRequired(text, declaration, `${declaration}\n  ...bambooFailureLocales.${locale},`, path)
+    }
+    output.set(path, "import { bambooFailureLocales } from './bamboo-failure.ts'\n" + text)
+  }
+  replace('packages/client/ui-chat/src/client/chat/MessageItem.tsx', [
+    ["import { memo,", "import { bambooFailureMessage } from '../bamboo-failure.ts'\nimport { memo,"],
+    ["  if (code === 'ACCOUNT_SIGNED_OUT')", "  const bamboo = bambooFailureMessage(message, code, t)\n  if (bamboo !== undefined) return bamboo\n  if (code === 'ACCOUNT_SIGNED_OUT')"],
+  ])
+  replace('packages/client/ui-trajectory/src/client/TrajectoryTable.tsx', [
+    ["import { useCallback,", "import { bambooFailureMessage } from './bamboo-failure.ts'\nimport { useCallback,"],
+    ["  if (request.errorCode === 'AUTH')", "  const bamboo = bambooFailureMessage(request.error ?? '', request.errorCode, t)\n  if (bamboo !== undefined) return bamboo\n  if (request.errorCode === 'AUTH')"],
+  ])
+  for (const [path, module] of [
+    ['packages/client/ui-chat/src/client/conversation-nodes/event-projection.ts', '../bamboo-failure.ts'],
+    ['packages/client/ui-trajectory/src/client/trajectory-event-projection.ts', './bamboo-failure.ts'],
+  ]) {
+    const text = replaceRequired(original(path), "  if (code === 'AUTH') return { code, message: '' }",
+      "  const bamboo = typeof record.message === 'string' ? decodeBambooFailure({ code, message: record.message }) : undefined\n  if (bamboo) return bamboo\n  if (code === 'AUTH') return { code, message: '' }", path)
+    output.set(path, `import { decodeBambooFailure } from '${module}'\n` + text)
+  }
+
   output.set('packages/llm/llm-pi-ai/tests/bamboo-chat.spec.ts', readFileSync(join(root, 'test/bamboo-chat.spec.ts')))
   copy('account-client.ts', 'packages/client/ui-settings-account/src/client/index.ts')
   copy('account-locales.ts', 'packages/client/ui-settings-account/src/client/bamboo-account-locales.ts')

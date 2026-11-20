@@ -155,7 +155,7 @@ test('account eligibility and a stale account generation stop requests before ga
   await assert.rejects(f.account.inference({ model: model.id }, -1, new AbortController().signal), /account changed/)
   f.session({ status: 200, value: { ...session, wallets: [session.wallets[0], { currency: 'CNY', balance: '0', reserved: '0', available: '0' }] } })
   assert.equal((await f.account.refresh(true)).noticeKey, 'wallet_empty')
-  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /CNY wallet has no available funds/)
+  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /account balance is insufficient/)
   assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
 })
 
@@ -169,7 +169,7 @@ test('wallet debt stays visible, blocks calls and recovers after a positive top-
   assert.deepEqual(indebted.account.wallet, wallet)
   assert.equal(indebted.noticeKey, 'wallet_empty')
   assert.equal(indebted.canCall, false)
-  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /CNY wallet has no available funds/)
+  await assert.rejects(f.account.inference({ model: model.id }, f.account.generation, new AbortController().signal), /account balance is insufficient/)
   assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
   f.session({ status: 200, value: { ...session, wallets: [{ ...wallet, balance: '0.000000001', available: '0.000000001' }] } })
   assert.equal((await f.account.refresh(true)).canCall, true)
@@ -370,7 +370,7 @@ test('CNY funding and model eligibility depend on the CNY wallet and prices', as
   await f.account.signIn(); await f.account.poll()
   f.session({ status: 200, value: { ...session, topup_currencies: [], wallets: [session.wallets[0], { currency: 'CNY', balance: '0', reserved: '0', available: '0' }] } })
   assert.equal((await f.account.refresh(true)).canCall, false)
-  assert.match(f.account.state().notice, /CNY wallet has no available funds/)
+  assert.match(f.account.state().notice, /account balance is insufficient/)
   f.session({ status: 200, value: { ...session, topup_currencies: ['CNY'], wallets: [session.wallets[1]] } })
   const funded = await f.account.refresh(true)
   assert.equal(funded.canCall, true)
@@ -379,4 +379,30 @@ test('CNY funding and model eligibility depend on the CNY wallet and prices', as
   assert.equal((await f.account.refresh(true)).canCall, false)
   assert.equal(f.account.state().notice, 'No chat models are available for CNY billing. Check again later.')
   assert.deepEqual(await f.account.catalog(), { generation: f.account.generation, status: 'signed-in', models: [] })
+})
+
+test('the Host bridge distinguishes balance, policy and account refresh failures from authentication', async t => {
+  const f = await fixture(t)
+  await f.account.signIn(); await f.account.poll()
+  const bridge = await createBambooBridge(f.account)
+  t.after(() => bridge.close())
+  for (const [reply, status, code] of [
+    [{ status: 200, value: { ...session, wallets: [{ currency: 'CNY', balance: '-1', reserved: '0', available: '-1' }] } }, 402, 'insufficient_balance'],
+    [{ status: 200, value: { ...session, policy: { ready: true, accepted: false } } }, 403, 'policy_acceptance_required'],
+    [{ status: 503, value: { error: { code: 'database_unavailable' } } }, 503, 'database_unavailable'],
+  ]) {
+    f.session(reply)
+    await f.account.refresh(true)
+    const response = await fetch(`${bridge.url}/session/${f.account.generation}/v1/chat/completions`, {
+      method: 'POST', headers: { authorization: `Bearer ${bridge.token}` }, body: JSON.stringify({ model: model.id, stream: true }),
+    })
+    assert.equal(response.status, status)
+    assert.equal((await response.json()).error.code, code)
+    assert.equal(f.account.state().status, 'signed-in')
+    assert.equal(f.saved().token, token)
+  }
+  f.session(null)
+  await f.account.refresh(true)
+  assert.equal(f.account.state().canCall, true)
+  assert.equal(f.calls.filter(call => call.path === '/v1/chat/completions').length, 0)
 })

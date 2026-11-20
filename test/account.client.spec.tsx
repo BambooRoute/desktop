@@ -53,11 +53,11 @@ function fixture() {
   return { state, api, update: (value: BambooState) => receive(value) }
 }
 
-it('shows the CNY wallet, exact prices and the available billing action', async () => {
+it('shows the account balance, exact prices and the available billing action', async () => {
   const f = fixture()
   await renderAccount()
   await screen.findByText('CNY 68.9')
-  expect(within(screen.getByRole('region', { name: 'CNY wallet' })).getByText('CNY 1.1')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Account balance' })).getByText('CNY 1.1')).toBeTruthy()
   expect(screen.queryByRole('region', { name: 'USD wallet' })).toBeNull()
   expect(screen.queryByRole('combobox')).toBeNull()
   expect(screen.getByText('CNY 0.123456789')).toBeTruthy()
@@ -78,12 +78,12 @@ it('reconnects a legacy device directly to CNY and offers cancellation while awa
   await act(async () => {
     f.update({ status: 'signed-out', models: [], canCall: false, noticeKey: 'connect_cny_wallet' })
   })
-  expect(screen.getByRole('status').textContent).toBe('Sign in again to connect your CNY wallet.')
+  expect(screen.getByRole('status').textContent).toBe('Sign in again to reconnect your account.')
   expect(screen.queryByRole('combobox')).toBeNull()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sign in to Bamboo' })) })
   expect(f.api.signIn).toHaveBeenCalledWith()
   await act(async () => { f.update({ status: 'waiting', models: [], canCall: false, code: 'ABCD-EFGH' }) })
-  expect(screen.getByText('Confirm this code in your browser to connect your CNY wallet:')).toBeTruthy()
+  expect(screen.getByText('Confirm this code in your browser to connect your account:')).toBeTruthy()
   expect(screen.getByText('ABCD-EFGH')).toBeTruthy()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel' })) })
   expect(f.api.cancel).toHaveBeenCalledTimes(1)
@@ -114,7 +114,7 @@ it('updates the account navigation, wallet and current messages when the desktop
   act(() => locale.setLocale('zh'))
   expect(typeof navLabel === 'function' && navLabel()).toBe('Bamboo 账户')
   expect(screen.getByRole('region', { name: 'Bamboo 账户' })).toBe(panel)
-  expect(within(screen.getByRole('region', { name: 'CNY 钱包' })).getByText('CNY 68.9')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: '账户余额' })).getByText('CNY 68.9')).toBeTruthy()
   expect(screen.getByRole('button', { name: '刷新' })).toBeTruthy()
   expect(screen.getByRole('status').textContent).toBe('暂时无法调用模型，请稍后再试。')
   expect(screen.getByRole('heading', { name: '工作区可用模型' }).nextElementSibling).toBe(screen.getByRole('status'))

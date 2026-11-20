@@ -22,7 +22,7 @@ const gatewayMessages = {
   invalid_api_key: 'Your desktop connection expired or was revoked. Sign in again.',
   desktop_authorization_expired: 'The sign-in request expired. Start sign-in again.',
   desktop_authorization_denied: 'The device connection was declined. You can start sign-in again.',
-  insufficient_balance: 'Your CNY wallet has no positive available balance. Add funds in Billing to continue.',
+  insufficient_balance: 'Your account balance is insufficient. Add funds in Billing to continue.',
   invalid_currency: 'Bamboo could not use CNY billing. Check your account and try again.',
   key_budget_exceeded: 'This device reached its spending limit. Update its budget on the API keys page.',
   email_verification_required: 'Verify your email in your Bamboo account, then refresh.',
@@ -114,7 +114,7 @@ function accountBlocker(account) {
   if (!account.modelAccess) return { noticeKey: 'model_access_disabled', notice: 'Model access is not enabled for your account. Contact Bamboo support.' }
   if (!account.policyReady) return { noticeKey: 'policy_unavailable', notice: gatewayMessages.policy_unavailable }
   if (!account.policyAccepted) return { noticeKey: 'policy_acceptance_required', notice: 'Review the current service policies in your Bamboo account, then refresh.' }
-  if (Number(account.wallet.available) <= 0) return { noticeKey: 'wallet_empty', notice: `Your ${account.currency} wallet has no available funds. Open billing to check funding options.` }
+  if (Number(account.wallet.available) <= 0) return { noticeKey: 'wallet_empty', notice: 'Your account balance is insufficient. Open Billing to add funds.' }
 }
 
 export class BambooAccount {
@@ -134,6 +134,7 @@ export class BambooAccount {
     this.refreshing = null
     this.lastRefresh = 0
     this.persisting = null
+    this.callError = null
     this.value = { status: 'signed-out', models: [], canCall: false }
   }
 
@@ -304,7 +305,7 @@ export class BambooAccount {
   async resume(failure) {
     const credential = this.credential
     const notice = this.savedCredential && !credential ?
-      { noticeKey: 'connect_cny_wallet', notice: 'Sign in again to connect your CNY wallet.' } : undefined
+      { noticeKey: 'connect_cny_wallet', notice: 'Sign in again to reconnect your account.' } : undefined
     this.publish({ status: credential ? 'signed-in' : 'signed-out', models: [], canCall: false, ...notice })
     this.lastRefresh = 0
     if (credential) await this.refresh(true)
@@ -339,12 +340,14 @@ export class BambooAccount {
         const account = parseAccount(session.value)
         const models = parseModels(catalog.value)
         this.lastRefresh = Date.now()
+        this.callError = null
         const blocker = accountBlocker(account)
         const notice = blocker ?? (models.length === 0 ? { noticeKey: 'no_models', notice: 'No chat models are available for CNY billing. Check again later.' } : undefined)
         return this.publish({ status: 'signed-in', account, models, canCall: !blocker && models.length > 0, notice: '', ...notice })
       } catch (error) {
         if (generation !== this.generation || credential !== this.credential) return this.state()
         if (error instanceof BambooError && error.status === 401) return this.expire()
+        this.callError = error instanceof BambooError ? error : new BambooError('account_not_ready', 'Account details could not be refreshed. Try again.', 503)
         return this.publish({ ...this.value, status: 'signed-in', canCall: false,
           ...accountError(error, 'refresh_failed', 'Account details could not be refreshed. Try again.') })
       } finally { if (this.refreshing === refresh) this.refreshing = null }
@@ -400,7 +403,14 @@ export class BambooAccount {
     const credential = this.credential
     if (!credential) throw new BambooError('invalid_api_key', 'Sign in to Bamboo before sending a message.', 401)
     if (generation !== this.generation) throw new BambooError('account_changed', 'Your account changed. Start a new request before continuing.', 409)
-    if (!this.value.canCall) throw new BambooError('account_not_ready', this.value.error || this.value.notice || 'Refresh your Bamboo account before trying again.', 403)
+    if (!this.value.canCall) {
+      if (this.callError) throw this.callError
+      const code = this.value.noticeKey === 'wallet_empty' ? 'insufficient_balance'
+        : this.value.noticeKey === 'no_models' ? 'model_unavailable' : this.value.noticeKey || 'account_not_ready'
+      const status = code === 'insufficient_balance' ? 402 : code === 'policy_unavailable' || code === 'account_not_ready' ? 503
+        : code === 'model_unavailable' ? 400 : 403
+      throw new BambooError(code, this.value.notice || 'Refresh your Bamboo account before trying again.', status)
+    }
     if (!this.value.models.some(model => model.id === body.model)) throw new BambooError('model_unavailable', userError('model_unavailable'), 400)
     const controller = new AbortController()
     this.aborters.add(controller)
